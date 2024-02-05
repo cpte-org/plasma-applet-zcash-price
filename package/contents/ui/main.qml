@@ -8,14 +8,14 @@ import QtQuick.Controls 1.4
 import org.kde.plasma.core 2.0 as PlasmaCore
 import org.kde.plasma.plasmoid 2.0
 import org.kde.plasma.components 2.0 as PlasmaComponents
-import "../code/kusama.js" as Kusama
+import "../code/zcash.js" as Zcash
 
 Item {
 	id: root
 	
 	Layout.fillHeight: true
 	
-	property string kusamaRate: '...'
+	property string zcashRate: '...'
 	property bool showIcon: plasmoid.configuration.showIcon
 	property bool showText: plasmoid.configuration.showText
 	property bool updatingRate: false
@@ -25,15 +25,15 @@ Item {
 	Plasmoid.backgroundHints: plasmoid.configuration.showBackground ? "StandardBackground" : "NoBackground"
 	
 	Plasmoid.compactRepresentation: Item {
-		property int textMargin: kusamaIcon.height * 0.25
+		property int textMargin: zcashIcon.height * 0.25
 		property int minWidth: {
 			if(root.showIcon && root.showText) {
-				return kusamaValue.paintedWidth + kusamaIcon.width + textMargin;
+				return zcashValue.paintedWidth + zcashIcon.width + textMargin;
 			}
 			else if(root.showIcon) {
-				return kusamaIcon.width;
+				return zcashIcon.width;
 			} else {
-				return kusamaValue.paintedWidth
+				return zcashValue.paintedWidth
 			}
 		}
 		
@@ -61,13 +61,13 @@ Item {
 		BusyIndicator {
 			width: parent.height
 			height: parent.height
-			anchors.horizontalCenter: root.showIcon ? kusamaIcon.horizontalCenter : kusamaValue.horizontalCenter
+			anchors.horizontalCenter: root.showIcon ? zcashIcon.horizontalCenter : zcashValue.horizontalCenter
 			running: updatingRate
 			visible: updatingRate
 		}
 		
 		Image {
-			id: kusamaIcon
+			id: zcashIcon
 			width: parent.height * 0.9
 			height: parent.height * 0.9
 			anchors.top: parent.top
@@ -75,15 +75,15 @@ Item {
 			anchors.topMargin: parent.height * 0.05
 			anchors.leftMargin: root.showText ? parent.height * 0.05 : 0
 			
-			source: "../images/kusama.png"
+			source: "../images/zcash.png"
 			visible: root.showIcon
 			opacity: root.updatingRate ? 0.2 : mouseArea.containsMouse ? 0.8 : 1.0
 		}
 		
 		PlasmaComponents.Label {
-			id: kusamaValue
+			id: zcashValue
 			height: parent.height
-			anchors.left: root.showIcon ? kusamaIcon.right : parent.left
+			anchors.left: root.showIcon ? zcashIcon.right : parent.left
 			anchors.right: parent.right
 			anchors.leftMargin: root.showIcon ? textMargin : 0
 			
@@ -94,9 +94,9 @@ Item {
 			opacity: root.updatingRate ? 0.2 : mouseArea.containsMouse ? 0.8 : 1.0
 			
 			fontSizeMode: Text.Fit
-			minimumPixelSize: kusamaIcon.width * 0.7
+			minimumPixelSize: zcashIcon.width * 0.7
 			font.pixelSize: 72			
-			text: root.kusamaRate
+			text: root.zcashRate
 		}
 	}
 	
@@ -109,21 +109,21 @@ Item {
 		target: plasmoid.configuration
 		
 		onCurrencyChanged: {
-			kusamaTimer.restart();
+			zcashTimer.restart();
 		}
 		onSourceChanged: {
-			kusamaTimer.restart();
+			zcashTimer.restart();
 		}
 		onRefreshRateChanged: {
-			kusamaTimer.restart();
+			zcashTimer.restart();
 		}
 		onShowDecimalsChanged: {
-			kusamaTimer.restart();
+			zcashTimer.restart();
 		}
 	}
 	
 	Timer {
-		id: kusamaTimer
+		id: zcashTimer
 		interval: plasmoid.configuration.refreshRate * 60 * 1000
 		running: true
 		repeat: true
@@ -131,16 +131,16 @@ Item {
 		onTriggered: {
 			root.updatingRate = true;
 			
-			var result = Kusama.getRate(plasmoid.configuration.source, plasmoid.configuration.currency, function(rate) {
+			var result = Zcash.getRate(plasmoid.configuration.source, plasmoid.configuration.currency, function(rate) {
 				if(!plasmoid.configuration.showDecimals) rate = Math.floor(rate);
 				
-				var rateText = Number(rate).toLocaleCurrencyString(Qt.locale(), Kusama.currencySymbols[plasmoid.configuration.currency]);
+				var rateText = Number(rate).toLocaleCurrencyString(Qt.locale(), Zcash.currencySymbols[plasmoid.configuration.currency]);
 				
 				if(!plasmoid.configuration.showDecimals) rateText = rateText.replace(Qt.locale().decimalPoint + '00', '');
 				
-				root.kusamaRate = rateText;
+				root.zcashRate = rateText;
 				
-				var toolTipSubText = '<b>' + root.kusamaRate + '</b>';
+				var toolTipSubText = '<b>' + root.zcashRate + '</b>';
 				toolTipSubText += '<br />';
 				toolTipSubText += i18n('Market:') + ' ' + plasmoid.configuration.source;
 				
@@ -152,10 +152,10 @@ Item {
 	}
 	
 	function action_refresh() {
-		kusamaTimer.restart();
+		zcashTimer.restart();
 	}
 	
 	function action_website() {
-		Qt.openUrlExternally(Kusama.getSourceByName(plasmoid.configuration.source).homepage);
+		Qt.openUrlExternally(Zcash.getSourceByName(plasmoid.configuration.source).homepage);
 	}
 }

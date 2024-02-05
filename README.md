@@ -1,7 +1,7 @@
-# Kusama Price Plasmoid
+# Zcash Price Plasmoid
 
 ## About
-Plasma applet showing the current price of Kusama from various markets to choose from. The plasmoid can also convert the price to a desired currency.
+Plasma applet showing the current price of Zcash from various markets to choose from. The plasmoid can also convert the price to a desired currency.
 
 ## Installation
 ```

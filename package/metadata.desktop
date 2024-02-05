@@ -1,20 +1,20 @@
 [Desktop Entry]
-Name=Kusama Price
-Comment=Shows current price of Kusama on the market.
+Name=Zcash Price
+Comment=Shows current price of Zcash on the market.
 
-Icon=kusama
+Icon=zcash
 Type=Service
 ServiceTypes=Plasma/Applet
 
-X-KDE-PluginInfo-Author=DEADBLACKCLOVER
-X-KDE-PluginInfo-Email=deadblackclover@protonmail.com
+X-KDE-PluginInfo-Author=cpteorg
+X-KDE-PluginInfo-Email=cpteorg@proton.me
 X-KDE-PluginInfo-Version=1.1
-X-KDE-PluginInfo-Website=https://cipherdogs.net/
+X-KDE-PluginInfo-Website=https://cpte-org.github.io
 X-KDE-PluginInfo-Category=Utilities
 X-KDE-PluginInfo-Depends=
 X-KDE-PluginInfo-License=GPL-3.0
 X-KDE-PluginInfo-EnabledByDefault=true
-X-KDE-PluginInfo-Name=org.kde.plasma.kusamaprice
+X-KDE-PluginInfo-Name=org.kde.plasma.zcashprice
 
 X-Plasma-API=declarativeappletscript
 X-Plasma-MainScript=ui/main.qml

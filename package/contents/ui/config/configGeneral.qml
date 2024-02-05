@@ -3,7 +3,7 @@ import QtQuick.Controls 1.1
 import QtQuick.Layouts 1.1
 
 import ".."
-import "../../code/kusama.js" as Kusama
+import "../../code/zcash.js" as Zcash
 
 Item {
 	id: configGeneral
@@ -16,8 +16,8 @@ Item {
 	property alias cfg_showText: showText.checked
 	property alias cfg_showDecimals: showDecimals.checked
 	property alias cfg_showBackground: showBackground.checked
-	property variant sourceList: { Kusama.getAllSources() }
-	property variant currencyList: { Kusama.getAllCurrencies() }
+	property variant sourceList: { Zcash.getAllSources() }
+	property variant currencyList: { Zcash.getAllCurrencies() }
 
 	GridLayout {
 		columns: 2
