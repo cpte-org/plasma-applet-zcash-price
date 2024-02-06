@@ -1,7 +1,7 @@
-# Zcash Price Plasmoid
+# Zcash Price Tracker Plasma 5 Applet
 
 ## About
-Plasma applet showing the current price of Zcash from various markets to choose from. The plasmoid can also convert the price to a desired currency.
+Keep a close eye on the Zcash price with this sleek and lightweight Plasma 5 applet. Effortlessly monitor the current Zcash price in USD from multiple reliable sources.
 
 ## Installation
 ```
@@ -17,8 +17,10 @@ make run
 ```
 
 ## Supported sources
-- Cryptonator
+- Coingecko
 - Bitfinex
+- Binance
+- Fawazahmed0
 
 ## Supported currencies
 - USD ($) - US Dollar
