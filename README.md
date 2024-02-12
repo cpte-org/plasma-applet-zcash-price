@@ -20,6 +20,7 @@ make run
 - Coingecko
 - Bitfinex
 - Binance
+- Sideshift
 - Fawazahmed0
 
 ## Supported currencies

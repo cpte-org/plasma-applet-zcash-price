@@ -8,7 +8,7 @@ ServiceTypes=Plasma/Applet
 
 X-KDE-PluginInfo-Author=cpteorg
 X-KDE-PluginInfo-Email=cpteorg@proton.me
-X-KDE-PluginInfo-Version=1.1
+X-KDE-PluginInfo-Version=1.1.1
 X-KDE-PluginInfo-Website=https://cpte-org.github.io
 X-KDE-PluginInfo-Category=Utilities
 X-KDE-PluginInfo-Depends=

@@ -27,6 +27,15 @@ var sources = [
         }
     },
     {
+        name: 'Sideshift',
+        url: 'https://sideshift.ai/api/v2/pair/zcash-shielded/usdt-arbitrum',
+        homepage: 'https://www.sideshift.ai/',
+        currency: 'USD',
+        getRate: function (data) {
+            return data.rate;
+        }
+    },
+    {
         name: 'Fawazahmed0',
         url: 'https://cdn.jsdelivr.net/gh/fawazahmed0/currency-api@1/latest/currencies/zec.json',
         homepage: 'https://github.com/fawazahmed0/currency-api',

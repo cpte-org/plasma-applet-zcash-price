@@ -8,4 +8,4 @@ run:
 
 .PHONY: zip
 zip:
-	zip -r zcashprice-1.1.plasmoid ./package/
+	zip -r zcashprice-1.1.1.plasmoid ./package/
