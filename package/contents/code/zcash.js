@@ -50,16 +50,6 @@ var currencyApiUrl = 'http://api.fixer.io';
 
 var currencySymbols = {
     'USD': '$',  // US Dollar
-    //'EUR': '€',  // Euro
-    //'CZK': 'Kč', // Czech Coruna
-    //'GBP': '£',  // British Pound Sterling
-    //'ILS': '₪',  // Israeli New Sheqel
-    //'INR': '₹',  // Indian Rupee
-    //'JPY': '¥',  // Japanese Yen
-    //'KRW': '₩',  // South Korean Won
-    //'PHP': '₱',  // Philippine Peso
-    //'PLN': 'zł', // Polish Zloty
-    //'THB': '฿',  // Thai Baht
 };
 
 function getRate(source, currency, callback) {
@@ -67,18 +57,24 @@ function getRate(source, currency, callback) {
 
     if (source === null) return false;
 
-    request(source.url, function (req) {
-        var data = JSON.parse(req.responseText);
-        var rate = source.getRate(data);
-
-        if (source.currency != currency) {
-            convert(rate, source.currency, currency, callback);
-            return;
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', source.url, true);
+    xhr.onreadystatechange = function () {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+            if (xhr.status === 200) {
+                var data = JSON.parse(xhr.responseText);
+                var rate = source.getRate(data);
+                if (source.currency !== currency) {
+                    convert(rate, source.currency, currency, callback);
+                    return;
+                }
+                callback(rate);
+            } else {
+                console.error('Request failed with status:', xhr.status);
+            }
         }
-
-        callback(rate);
-    });
-
+    };
+    xhr.send();
     return true;
 }
 
@@ -88,46 +84,39 @@ function getSourceByName(name) {
             return sources[i];
         }
     }
-
     return null;
 }
 
 function getAllSources() {
     var sourceNames = [];
-
     for (var i = 0; i < sources.length; i++) {
         sourceNames.push(sources[i].name);
     }
-
     return sourceNames;
 }
 
 function getAllCurrencies() {
     var currencies = [];
-
     Object.keys(currencySymbols).forEach(function eachKey(key) {
         currencies.push(key);
     });
-
     return currencies;
 }
 
 function convert(value, from, to, callback) {
-    request(currencyApiUrl + '/latest?base=' + from, function (req) {
-        var data = JSON.parse(req.responseText);
-        var rate = data.rates[to];
-
-        callback(value * rate);
-    });
-}
-
-function request(url, callback) {
     var xhr = new XMLHttpRequest();
-    xhr.onreadystatechange = (function (xhr) {
-        return function () {
-            callback(xhr);
+    xhr.open('GET', currencyApiUrl + '/latest?base=' + from, true);
+    xhr.onreadystatechange = function () {
+        if (xhr.readyState === XMLHttpRequest.DONE) {
+            if (xhr.status === 200) {
+                var data = JSON.parse(xhr.responseText);
+                var rate = data.rates[to];
+                callback(value * rate);
+            } else {
+                console.error('Request failed with status:', xhr.status);
+            }
         }
-    })(xhr);
-    xhr.open('GET', url, true);
-    xhr.send('');
+    };
+    xhr.send();
 }
+
