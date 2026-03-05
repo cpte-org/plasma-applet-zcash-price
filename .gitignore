@@ -1,5 +1,14 @@
-build
+# Build artifacts
+build/
+*.plasmoid
+
+# KDE/Plasma
 .kdev4
 *.jsc
 *.qmlc
-zcashprice-*.plasmoid
+
+# Temporary files
+*~
+*.swp
+*.swo
+.DS_Store

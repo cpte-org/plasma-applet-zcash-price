@@ -1,0 +1,20 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "cpteorg@proton.me",
+                "Name": "cpteorg"
+            }
+        ],
+        "Category": "Utilities",
+        "Description": "Shows current price of Zcash on the market",
+        "Icon": "zcash",
+        "Id": "org.kde.plasma.zcashprice",
+        "License": "GPL-3.0",
+        "Name": "Zcash Price",
+        "Version": "2.0.0",
+        "Website": "https://cpte-org.github.io"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
