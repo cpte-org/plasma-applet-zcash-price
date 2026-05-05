@@ -4,60 +4,60 @@
       xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
       http://www.kde.org/standards/kcfg/1.0/kcfg.xsd" >
   <kcfgfile name=""/>
-  
+
   <group name="General">
-    <!-- Data Source -->
+    <entry name="coin" type="String">
+      <label>Tracked coin (ticker symbol)</label>
+      <default>ZEC</default>
+    </entry>
+
     <entry name="source" type="String">
       <label>Price source</label>
       <default>Binance</default>
     </entry>
-    
+
     <entry name="useWebSocket" type="Bool">
       <label>Use WebSocket for real-time updates</label>
       <default>true</default>
     </entry>
-    
-    <!-- Currency Settings -->
+
     <entry name="currency" type="String">
       <label>Display currency</label>
       <default>USD</default>
     </entry>
-    
+
     <entry name="showDecimals" type="Bool">
       <label>Show decimal places</label>
       <default>true</default>
     </entry>
-    
+
     <entry name="showPriceChange" type="Bool">
       <label>Show 24h price change percentage</label>
       <default>true</default>
     </entry>
-    
-    <!-- Refresh Settings -->
+
     <entry name="refreshRate" type="Int">
       <label>Refresh rate in minutes</label>
       <default>5</default>
       <min>1</min>
       <max>60</max>
     </entry>
-    
-    <!-- Display Options -->
+
     <entry name="showIcon" type="Bool">
-      <label>Show Zcash icon</label>
+      <label>Show coin badge</label>
       <default>true</default>
     </entry>
-    
+
     <entry name="showText" type="Bool">
       <label>Show price text</label>
       <default>true</default>
     </entry>
-    
+
     <entry name="showBackground" type="Bool">
       <label>Show widget background</label>
       <default>true</default>
     </entry>
-    
-    <!-- Interaction -->
+
     <entry name="onClickAction" type="String">
       <label>Action when clicking the widget</label>
       <default>refresh</default>

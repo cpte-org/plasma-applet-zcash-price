@@ -1,55 +1,31 @@
-# Zcash Price Tracker Plasma 6 Applet
+# Crypto Price Tracker — Plasma 6 Applet
 
-A sleek and lightweight KDE Plasma 6 widget to monitor Zcash (ZEC) price in real-time.
+A lightweight, silent KDE Plasma 6 widget that tracks the live price of any of 50 supported cryptocurrencies.
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue)
+![Version](https://img.shields.io/badge/version-3.1.0-blue)
 ![Plasma](https://img.shields.io/badge/Plasma-6.0+-1d99f3)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 ## Features
 
-- **Real-time Price Updates**: WebSocket support for live price streaming (Binance & Bitfinex)
-- **Multiple Data Sources**: Choose from Binance, Coingecko, or Bitfinex
-- **24h Price Change**: Display percentage change with color indicators
-- **Customizable Display**: Toggle icon, text, decimals, and background
-- **Fallback Polling**: Automatic fallback to REST API polling when WebSocket unavailable
-- **Error Resilience**: Robust error handling with user-friendly messages
-- **Auto-Reconnection**: WebSocket automatically reconnects on connection loss
-- **Exponential Backoff**: Reduces API load during connection issues
-- **Health Monitoring**: Detects stale data and auto-refreshes
-- **Data Validation**: Sanity checks prevent displaying invalid prices
-- **Panel & Desktop**: Works seamlessly in both panel and desktop modes
+- **50 coins**: ZEC, BTC, ETH, SOL, XRP, ADA, AVAX, DOT, LINK, ATOM, NEAR, APT, SUI, TON, HBAR, ICP, XLM, ALGO, XTZ, EGLD, ARB, OP, POL, MNT, TIA, STX, UNI, AAVE, MKR, LDO, CRV, RUNE, GMX, DYDX, COMP, FIL, GRT, RNDR, API3, VET, INJ, MINA, KAVA, ROSE, SEI, FLOW, THETA, ZIL, IOTA, NEO.
+- **5 sources**: Binance, Coingecko, Bitfinex, Kraken, Coinbase. Source list auto-filters to the ones that actually list the picked coin.
+- **Live updates** via WebSocket (Binance, Bitfinex). REST polling fallback for the others or when WS is unavailable.
+- **Themed coin badge** (no bundled logo). Ticker text on a coin-colored circle, scales cleanly at any panel size.
+- **Event-driven recovery** from sleep/suspend and network state changes via DBus (login1 + NetworkManager).
+- **Silent**: no tooltip, no logging, no error dialogs. Just the price.
+- 24h change indicator (theme-correct positive/negative colors).
+- Configurable refresh interval, decimal precision, click action.
+- Panel and desktop modes.
 
 ## Requirements
 
-- KDE Plasma 6.0 or higher
-- Qt 6.0 or higher
-- KDE Frameworks 6.0 or higher
-
-## Testing (Safe Method)
-
-**⚠️ Never test directly on your main panel!**
-
-### Quick Validation
-```bash
-./validate.sh  # Check code before testing
-```
-
-### Isolated Testing (Safe)
-```bash
-# Test in isolated window (won't affect desktop)
-plasmoidviewer --applet ./package/ --standalone
-
-# Test panel mode
-plasmoidviewer --applet ./package/ --location top
-```
-
-### Full Testing Protocol
-See [TESTING.md](TESTING.md) for complete safe testing procedures.
+- KDE Plasma 6.0+
+- Qt 6.0+
+- KDE Frameworks 6
+- `dbus-monitor` (for event-driven recovery; usually pre-installed)
 
 ## Installation
-
-### From Source
 
 ```bash
 git clone https://github.com/cpte-org/plasma-applet-zcash-price.git
@@ -57,140 +33,86 @@ cd plasma-applet-zcash-price
 make install-user
 ```
 
-**Note**: Only install after successful isolated testing!
-
-To install system-wide (requires root):
+System-wide:
 ```bash
 sudo make install
 ```
 
-### Manual Installation
+After install, right-click the panel → "Add Widgets…" → search "Crypto Price".
 
-1. Download the latest `zcash-price-2.0.0.plasmoid` from releases
-2. Right-click on your desktop → "Add Widgets"
-3. Click "Get New Widgets" → "Install Widget From Local File"
-4. Select the downloaded `.plasmoid` file
+## Configuration
 
-## Usage
+Right-click the widget → "Configure Crypto Price…":
 
-After installation, add the widget to your panel or desktop:
+- **Coin**: ticker symbol (defaults to ZEC).
+- **Source**: filtered to sources that list the chosen coin (defaults to Binance).
+- **WebSocket**: live updates when supported.
+- **Currency**: USD/EUR/GBP/JPY/BTC/ETH (display formatting only).
+- **Decimal places**, **24h change**, **coin badge**, **price text**, **background**.
+- **Refresh interval** (REST mode only).
+- **Click action**: refresh price or open market website.
 
-1. Right-click on the panel or desktop
-2. Select "Add Widgets..."
-3. Search for "Zcash Price"
-4. Drag it to your desired location
+## Source coverage
 
-### Configuration
+| Source    | REST | WebSocket | Coins                     |
+|-----------|------|-----------|---------------------------|
+| Binance   | ✅   | ✅         | All 50                    |
+| Coingecko | ✅   | ❌         | All 50                    |
+| Bitfinex  | ✅   | ✅         | Most majors and L2s       |
+| Kraken    | ✅   | ❌         | Most majors and L2s       |
+| Coinbase  | ✅   | ❌         | Majors plus broad altcoin |
 
-Right-click the widget and select "Configure Zcash Price..." to customize:
+## Reliability
 
-- **Data Source**: Select your preferred price provider
-- **WebSocket**: Enable real-time streaming (if supported by source)
-- **Currency**: Display price in USD, EUR, GBP, JPY, BTC, or ETH
-- **Display Options**: Toggle icon, text, decimals, and price change
-- **Refresh Interval**: Set polling frequency (for non-WebSocket mode)
-- **Interaction**: Choose click action (refresh or open website)
+- **Unbounded WebSocket reconnects** with capped exponential backoff (1s → 60s) plus jitter.
+- **Resume from sleep**: subscribed to `org.freedesktop.login1.Manager.PrepareForSleep` via DBus. Triggers an immediate WS reconnect + REST fetch on wake.
+- **Network state changes**: subscribed to `org.freedesktop.NetworkManager.StateChanged`. Same trigger path.
+- **Wall-clock drift watchdog** (30s tick) as a safety net if DBus signals are unavailable.
+- **REST polling** runs whenever WS isn't connected; stops automatically once WS is live again.
+- All failures are silent — only the small connection dot reflects state.
 
-## Supported Data Sources
-
-| Source | REST API | WebSocket | 24h Change |
-|--------|----------|-----------|------------|
-| Binance | ✅ | ✅ | ✅ |
-| Coingecko | ✅ | ❌ | ✅ |
-| Bitfinex | ✅ | ✅ | ✅ |
-
-### WebSocket Support
-
-When WebSocket is enabled and supported by the selected source:
-- Prices update in real-time (no polling delay)
-- Connection status shown with colored indicator
-- Auto-reconnection with exponential backoff
-- Falls back to polling if WebSocket fails
-
-## Development
-
-### Testing Locally
-
-```bash
-# Run in plasmoidviewer
-make run
-
-# Run in standalone window
-make run-windowed
-
-# Run simulating panel
-make run-panel
-```
-
-### Project Structure
+## Project layout
 
 ```
 package/
-├── metadata.json           # Plasma 6 metadata
-├── contents/
-│   ├── code/
-│   │   └── PriceProvider.js    # Price fetching with WebSocket support
-│   ├── config/
-│   │   ├── config.qml          # Config categories
-│   │   └── main.xml            # Configuration schema
-│   ├── ui/
-│   │   ├── main.qml            # Main widget UI
-│   │   └── config/
-│   │       └── configGeneral.qml   # Settings UI
-│   └── images/
-│       └── zcash.png           # Zcash logo
+├── metadata.json
+└── contents/
+    ├── code/
+    │   └── PriceProvider.js          # Coin registry + REST providers
+    ├── config/
+    │   ├── config.qml
+    │   └── main.xml
+    └── ui/
+        ├── main.qml                   # Widget, state machine, DBus listener
+        ├── WebSocketProvider.qml      # Provider-agnostic WS client
+        └── config/
+            └── configGeneral.qml
 ```
 
-### Building Package
+## Development
 
 ```bash
-make zip
+make run             # plasmoidviewer
+make run-windowed    # standalone window
+make run-panel       # panel-simulated
+make lint            # qml syntax check
+make zip             # build distributable .plasmoid
 ```
 
-This creates `zcash-price-2.0.0.plasmoid` for distribution.
+See [TESTING.md](TESTING.md) for the safe testing protocol.
+
+## Migration from 2.x (Zcash-only)
+
+Configuration is preserved across upgrade. The default coin is `ZEC` and default source `Binance`, so existing setups continue to behave the same. To track a different coin, just open the widget settings and pick from the new **Coin** dropdown.
+
+The bundled `zcash.png` was removed in 3.x — the widget renders a themed ticker badge instead, so any cached references to the image are no longer needed.
 
 ## Troubleshooting
 
-### Widget not appearing
-
-Ensure you're running Plasma 6.0 or higher:
-```bash
-plasmashell --version
-```
-
-### WebSocket connection issues
-
-- Check your firewall settings
-- Some networks may block WebSocket connections
-- The widget will automatically fall back to polling
-
-### Rate limiting
-
-- **Coingecko**: Has strict rate limits (10-30 calls/minute on free tier)
-- **Binance**: More generous limits (~1200 calls/minute)
-- **Bitfinex**: Reasonable limits
-- If you see rate limit errors, the widget will automatically reduce update frequency
-
-### WebSocket connection issues
-
-- Check your firewall settings (ports 9443 for Binance, 443 for Bitfinex)
-- Some corporate networks block WebSocket connections
-- The widget automatically falls back to polling mode
-
-## Migration from Plasma 5
-
-This version (2.0.0+) is a complete rewrite for Plasma 6. If upgrading from v1.x:
-
-1. Remove the old widget: `kpackagetool5 --remove org.kde.plasma.zcashprice`
-2. Install the new version: `make install-user`
-3. Reconfigure your settings (configuration is not preserved)
+- **Widget shows `…` indefinitely** — the chosen coin/source pair may not be supported, or the network is offline. Try Binance + ZEC to verify the install works, then narrow from there.
+- **Live indicator stays red** — WebSocket is being blocked (firewall, captive portal). The widget falls back to REST polling automatically; price still updates.
+- **No event-driven recovery on resume** — `dbus-monitor` is missing. Install it (`sudo pacman -S dbus` / `apt install dbus`). The wall-clock watchdog still covers wake events at 30s granularity.
 
 ## License
 
-This project is licensed under GPL-3.0 - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Zcash logo used under fair use
-- Thanks to the KDE Plasma team for the excellent widget framework
-- Price data provided by Binance, Coingecko, and Bitfinex APIs
+GPL-3.0 — see [LICENSE](LICENSE).

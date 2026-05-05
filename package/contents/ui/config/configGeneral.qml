@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2024 Zcash Price Applet Contributors
+ *   Copyright (C) 2024 Crypto Price Applet Contributors
  *   SPDX-License-Identifier: GPL-3.0
  */
 
@@ -8,14 +8,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.kcmutils as KCM
-import org.kde.config as KConfig  // KF6 Config module
-import ".."
 import "../../code/PriceProvider.js" as PriceProvider
 
 KCM.SimpleKCM {
     id: configGeneral
 
-    // Configuration properties
+    property string cfg_coin
     property string cfg_source
     property string cfg_currency
     property int cfg_refreshRate
@@ -27,11 +25,56 @@ KCM.SimpleKCM {
     property string cfg_onClickAction
     property bool cfg_showPriceChange
 
+    readonly property var allCoins: PriceProvider.getCoins()
+    readonly property var coinModel: {
+        var arr = [];
+        for (var i = 0; i < allCoins.length; i++) {
+            var t = allCoins[i];
+            var info = PriceProvider.getCoinInfo(t);
+            arr.push({ ticker: t, name: info ? info.name : t, label: t + "  —  " + (info ? info.name : t) });
+        }
+        return arr;
+    }
+
+    readonly property var sourcesForCoin: PriceProvider.getSourcesForCoin(cfg_coin)
+    readonly property bool currentProviderSupportsWs: cfg_source === 'Binance' || cfg_source === 'Bitfinex'
+
     Kirigami.FormLayout {
         id: form
         Layout.fillWidth: true
 
-        // ========== Data Source Section ==========
+        // ====== Coin ======
+        Kirigami.Heading {
+            Kirigami.FormData.label: i18n("Coin")
+            Kirigami.FormData.isSection: true
+            level: 4
+        }
+
+        ComboBox {
+            id: coinCombo
+            Kirigami.FormData.label: i18n("Track:")
+            model: coinModel
+            textRole: "label"
+            valueRole: "ticker"
+            editable: true
+            // simple substring filter on ticker or name
+            currentIndex: {
+                for (var i = 0; i < coinModel.length; i++)
+                    if (coinModel[i].ticker === cfg_coin) return i;
+                return 0;
+            }
+            onActivated: (idx) => {
+                var picked = coinModel[idx].ticker;
+                cfg_coin = picked;
+                // If current source no longer supports this coin, switch to the first available.
+                var sources = PriceProvider.getSourcesForCoin(picked);
+                if (sources.indexOf(cfg_source) === -1 && sources.length > 0) {
+                    cfg_source = sources[0];
+                }
+            }
+        }
+
+        // ====== Source ======
         Kirigami.Heading {
             Kirigami.FormData.label: i18n("Data Source")
             Kirigami.FormData.isSection: true
@@ -40,25 +83,28 @@ KCM.SimpleKCM {
 
         ComboBox {
             id: sourceCombo
-            Kirigami.FormData.label: i18n("Price source:")
-            model: PriceProvider.getSources()
-            currentIndex: model.indexOf(cfg_source) >= 0 ? model.indexOf(cfg_source) : 0
+            Kirigami.FormData.label: i18n("Source:")
+            model: sourcesForCoin
+            currentIndex: Math.max(0, model.indexOf(cfg_source))
             onActivated: cfg_source = currentText
         }
 
-        // WebSocket support indicator and toggle
+        Label {
+            visible: sourcesForCoin.length === 0
+            text: i18n("No sources available for this coin")
+            color: Kirigami.Theme.negativeTextColor
+            font.pointSize: Kirigami.Theme.smallFont.pointSize
+        }
+
         RowLayout {
             Kirigami.FormData.label: i18n("Connection:")
             visible: currentProviderSupportsWs
             spacing: Kirigami.Units.mediumSpacing
 
             Rectangle {
-                width: 8
-                height: 8
-                radius: 4
-                color: "#4CAF50"
+                width: 8; height: 8; radius: 4
+                color: Kirigami.Theme.positiveTextColor
             }
-
             Label {
                 text: i18n("WebSocket available for live updates")
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
@@ -67,10 +113,9 @@ KCM.SimpleKCM {
         }
 
         CheckBox {
-            id: useWebSocketCheck
             visible: currentProviderSupportsWs
             checked: cfg_useWebSocket
-            text: i18n("Use WebSocket for real-time price updates")
+            text: i18n("Use WebSocket for real-time updates")
             onCheckedChanged: cfg_useWebSocket = checked
         }
 
@@ -82,36 +127,34 @@ KCM.SimpleKCM {
             leftPadding: Kirigami.Units.mediumSpacing
         }
 
-        // ========== Currency Section ==========
+        // ====== Currency ======
         Kirigami.Heading {
-            Kirigami.FormData.label: i18n("Currency")
+            Kirigami.FormData.label: i18n("Display")
             Kirigami.FormData.isSection: true
             level: 4
         }
 
         ComboBox {
             id: currencyCombo
-            Kirigami.FormData.label: i18n("Display currency:")
+            Kirigami.FormData.label: i18n("Currency:")
             model: PriceProvider.getCurrencies()
-            currentIndex: model.indexOf(cfg_currency) >= 0 ? model.indexOf(cfg_currency) : 0
+            currentIndex: Math.max(0, model.indexOf(cfg_currency))
             onActivated: cfg_currency = currentText
         }
 
         CheckBox {
-            id: showDecimalsCheck
             checked: cfg_showDecimals
             text: i18n("Show decimal places")
             onCheckedChanged: cfg_showDecimals = checked
         }
 
         CheckBox {
-            id: showPriceChangeCheck
             checked: cfg_showPriceChange
-            text: i18n("Show 24h price change percentage")
+            text: i18n("Show 24h change")
             onCheckedChanged: cfg_showPriceChange = checked
         }
 
-        // ========== Refresh Section ==========
+        // ====== Refresh ======
         Kirigami.Heading {
             Kirigami.FormData.label: i18n("Refresh")
             Kirigami.FormData.isSection: true
@@ -120,24 +163,19 @@ KCM.SimpleKCM {
         }
 
         SpinBox {
-            id: refreshRateSpin
-            Kirigami.FormData.label: i18n("Refresh interval:")
+            Kirigami.FormData.label: i18n("Interval:")
             visible: !cfg_useWebSocket || !currentProviderSupportsWs
             from: 1
             to: 60
             value: cfg_refreshRate
-            textFromValue: function(value, locale) {
-                return value + i18n(" minutes");
-            }
-            valueFromText: function(text, locale) {
-                return parseInt(text);
-            }
+            textFromValue: (v) => v + i18n(" min")
+            valueFromText: (t) => parseInt(t)
             onValueModified: cfg_refreshRate = value
         }
 
-        // ========== Display Section ==========
+        // ====== Widget ======
         Kirigami.Heading {
-            Kirigami.FormData.label: i18n("Display")
+            Kirigami.FormData.label: i18n("Widget")
             Kirigami.FormData.isSection: true
             level: 4
         }
@@ -145,14 +183,10 @@ KCM.SimpleKCM {
         CheckBox {
             id: showIconCheck
             checked: cfg_showIcon
-            text: i18n("Show Zcash icon")
+            text: i18n("Show coin badge")
             onCheckedChanged: {
                 cfg_showIcon = checked;
-                // Ensure at least one display option is enabled
-                if (!checked && !cfg_showText) {
-                    cfg_showText = true;
-                    showTextCheck.checked = true;
-                }
+                if (!checked && !cfg_showText) { cfg_showText = true; showTextCheck.checked = true; }
             }
         }
 
@@ -162,38 +196,24 @@ KCM.SimpleKCM {
             text: i18n("Show price text")
             onCheckedChanged: {
                 cfg_showText = checked;
-                // Ensure at least one display option is enabled
-                if (!checked && !cfg_showIcon) {
-                    cfg_showIcon = true;
-                    showIconCheck.checked = true;
-                }
+                if (!checked && !cfg_showIcon) { cfg_showIcon = true; showIconCheck.checked = true; }
             }
         }
 
         CheckBox {
-            id: showBackgroundCheck
             checked: cfg_showBackground
             text: i18n("Show background")
             onCheckedChanged: cfg_showBackground = checked
         }
 
-        // ========== Interaction Section ==========
+        // ====== Click action ======
         Kirigami.Heading {
-            Kirigami.FormData.label: i18n("Interaction")
+            Kirigami.FormData.label: i18n("Click action")
             Kirigami.FormData.isSection: true
             level: 4
         }
 
-        Label {
-            Kirigami.FormData.label: i18n("On click:")
-            text: i18n("Action when clicking the widget:")
-            font.pointSize: Kirigami.Theme.smallFont.pointSize
-            opacity: 0.7
-        }
-
-        ButtonGroup {
-            id: clickActionGroup
-        }
+        ButtonGroup { id: clickActionGroup }
 
         RadioButton {
             checked: cfg_onClickAction === "refresh"
@@ -208,19 +228,5 @@ KCM.SimpleKCM {
             ButtonGroup.group: clickActionGroup
             onCheckedChanged: if (checked) cfg_onClickAction = "website"
         }
-    }
-
-    // Helper property to check if current provider supports WebSocket
-    property bool currentProviderSupportsWs: {
-        var provider = PriceProvider.createProvider(cfg_source, {});
-        var supports = provider ? provider.supportsWebSocket : false;
-        if (provider && provider.destroy) provider.destroy();
-        return supports;
-    }
-
-    // Sync UI with config on load
-    Component.onCompleted: {
-        sourceCombo.currentIndex = Math.max(0, sourceCombo.model.indexOf(cfg_source));
-        currencyCombo.currentIndex = Math.max(0, currencyCombo.model.indexOf(cfg_currency));
     }
 }

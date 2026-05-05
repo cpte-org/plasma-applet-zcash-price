@@ -1,5 +1,5 @@
 /*
- *   Copyright (C) 2024 Zcash Price Applet Contributors
+ *   Copyright (C) 2024 Crypto Price Applet Contributors
  *   SPDX-License-Identifier: GPL-3.0
  */
 
@@ -11,27 +11,24 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.plasma.extras as PlasmaExtras
+import org.kde.plasma.plasma5support as P5Support
 import "../code/PriceProvider.js" as PriceProvider
 
 PlasmoidItem {
     id: root
 
-    // ========== Properties ==========
+    // ---- State
     property string currentPrice: "..."
     property string priceChange24h: ""
     property bool isPriceUp: false
     property bool isLoading: false
-    property string errorMessage: ""
     property bool isWebSocketConnected: false
     property var currentProvider: null
-    
-    // Stability tracking
-    property int consecutiveErrors: 0
-    property int maxConsecutiveErrors: 5
-    property int backoffMultiplier: 1
     property date lastSuccessfulUpdate
+    property real lastTickEpoch: 0
 
-    // Configuration shortcuts
+    // ---- Config
+    readonly property string cfgCoin: plasmoid.configuration.coin
     readonly property string cfgSource: plasmoid.configuration.source
     readonly property string cfgCurrency: plasmoid.configuration.currency
     readonly property int cfgRefreshRate: plasmoid.configuration.refreshRate
@@ -43,13 +40,45 @@ PlasmoidItem {
     readonly property string cfgOnClickAction: plasmoid.configuration.onClickAction
     readonly property bool cfgShowPriceChange: plasmoid.configuration.showPriceChange
 
-    // ========== Plasmoid Configuration ==========
+    readonly property var coinInfo: PriceProvider.getCoinInfo(cfgCoin)
+    readonly property color coinColor: coinInfo ? coinInfo.color : Kirigami.Theme.highlightColor
+    readonly property string coinName: coinInfo ? coinInfo.name : cfgCoin
+    readonly property int pollIntervalMs: cfgRefreshRate * 60 * 1000
+    readonly property color upColor: Kirigami.Theme.positiveTextColor
+    readonly property color downColor: Kirigami.Theme.negativeTextColor
+
+    // ---- No tooltip
     preferredRepresentation: compactRepresentation
-    toolTipMainText: i18n("Zcash Price")
-    toolTipSubText: formatTooltip()
+    toolTipMainText: ""
+    toolTipSubText: ""
     Plasmoid.backgroundHints: cfgShowBackground ? PlasmaCore.Types.StandardBackground : PlasmaCore.Types.NoBackground
 
-    // ========== Compact Representation (Panel Widget) ==========
+    // ========== Coin badge ==========
+    Component {
+        id: coinBadgeComponent
+        Rectangle {
+            property real diameter: 16
+            property string ticker: ""
+            property color badgeColor: Kirigami.Theme.highlightColor
+            implicitWidth: diameter
+            implicitHeight: diameter
+            radius: diameter / 2
+            color: badgeColor
+            border.color: Qt.rgba(0, 0, 0, 0.15)
+            border.width: 1
+            Label {
+                anchors.centerIn: parent
+                text: parent.ticker
+                color: "white"
+                font.bold: true
+                font.pointSize: Math.max(6, parent.diameter * 0.32)
+                font.letterSpacing: -0.3
+                renderType: Text.NativeRendering
+            }
+        }
+    }
+
+    // ========== Compact ==========
     compactRepresentation: Item {
         Layout.fillWidth: false
         Layout.fillHeight: true
@@ -60,53 +89,54 @@ PlasmoidItem {
             anchors.centerIn: parent
             spacing: Kirigami.Units.smallSpacing
 
-            // Connection status indicator (only when WebSocket is enabled)
             Rectangle {
                 visible: cfgUseWebSocket && root.currentProvider?.supportsWebSocket
                 width: 6
                 height: 6
                 radius: 3
-                color: root.isWebSocketConnected ? "#4CAF50" : "#F44336"
+                color: root.isWebSocketConnected ? root.upColor : root.downColor
                 Layout.alignment: Qt.AlignVCenter
             }
 
-            // Zcash Icon
-            Image {
-                id: zcashIcon
+            Loader {
+                id: compactBadge
                 visible: cfgShowIcon
-                source: "../images/zcash.png"
-                Layout.preferredWidth: Math.min(parent.height * 0.8, Kirigami.Units.iconSizes.smallMedium)
-                Layout.preferredHeight: Layout.preferredWidth
-                fillMode: Image.PreserveAspectFit
+                Layout.alignment: Qt.AlignVCenter
+                sourceComponent: coinBadgeComponent
+                onLoaded: applyBadge()
+                function applyBadge() {
+                    if (!item) return;
+                    item.diameter = Math.min(parent.height * 0.85, Kirigami.Units.iconSizes.smallMedium);
+                    item.ticker = root.cfgCoin;
+                    item.badgeColor = root.coinColor;
+                }
+                Connections {
+                    target: root
+                    function onCfgCoinChanged() { compactBadge.applyBadge(); }
+                }
                 opacity: root.isLoading ? 0.4 : 1.0
-                // Ensure smooth rendering
-                mipmap: true
-                smooth: true
+                Behavior on opacity { NumberAnimation { duration: 150 } }
             }
 
-            // Price Label
             PlasmaComponents.Label {
-                id: priceLabel
                 visible: cfgShowText
                 text: root.currentPrice
                 font.bold: true
-                font.pointSize: root.cfgShowIcon ? Kirigami.Theme.defaultFont.pointSize : Kirigami.Theme.defaultFont.pointSize + 1
+                font.pointSize: cfgShowIcon ? Kirigami.Theme.defaultFont.pointSize : Kirigami.Theme.defaultFont.pointSize + 1
                 opacity: root.isLoading ? 0.4 : 1.0
+                Behavior on opacity { NumberAnimation { duration: 150 } }
                 Layout.alignment: Qt.AlignVCenter
             }
 
-            // 24h Change Indicator
             PlasmaComponents.Label {
-                id: changeLabel
                 visible: cfgShowPriceChange && root.priceChange24h !== ""
                 text: root.priceChange24h
-                color: root.isPriceUp ? "#4CAF50" : "#F44336"
+                color: root.isPriceUp ? root.upColor : root.downColor
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 Layout.alignment: Qt.AlignVCenter
             }
         }
 
-        // Loading indicator overlay
         BusyIndicator {
             anchors.centerIn: parent
             running: root.isLoading
@@ -115,65 +145,49 @@ PlasmoidItem {
             height: width
         }
 
-        // Error indicator
-        Rectangle {
-            visible: root.errorMessage !== "" && !root.isLoading
-            anchors.bottom: parent.bottom
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: 4
-            height: 4
-            radius: 2
-            color: "#F44336"
-        }
-
         MouseArea {
             anchors.fill: parent
-            hoverEnabled: true
-            onClicked: {
-                if (cfgOnClickAction === "website") {
-                    openProviderWebsite();
-                } else {
-                    refreshPrice();
-                }
-            }
+            hoverEnabled: false
+            onClicked: cfgOnClickAction === "website" ? openProviderWebsite() : refreshPrice()
         }
     }
 
-    // ========== Full Representation (Popup/Expanded View) ==========
+    // ========== Full popup ==========
     fullRepresentation: Item {
-        Layout.minimumWidth: 280
-        Layout.minimumHeight: 180
-        Layout.preferredWidth: 320
-        Layout.preferredHeight: 220
+        Layout.minimumWidth: 300
+        Layout.minimumHeight: 200
+        Layout.preferredWidth: 340
+        Layout.preferredHeight: 240
 
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: Kirigami.Units.largeSpacing
             spacing: Kirigami.Units.mediumSpacing
 
-            // Header
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.mediumSpacing
 
-                Image {
-                    source: "../images/zcash.png"
-                    Layout.preferredWidth: Kirigami.Units.iconSizes.large
-                    Layout.preferredHeight: Layout.preferredWidth
-                    fillMode: Image.PreserveAspectFit
-                    mipmap: true
-                    smooth: true
+                Loader {
+                    id: popupBadge
+                    sourceComponent: coinBadgeComponent
+                    onLoaded: applyBadge()
+                    function applyBadge() {
+                        if (!item) return;
+                        item.diameter = Kirigami.Units.iconSizes.large;
+                        item.ticker = root.cfgCoin;
+                        item.badgeColor = root.coinColor;
+                    }
+                    Connections {
+                        target: root
+                        function onCfgCoinChanged() { popupBadge.applyBadge(); }
+                    }
                 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 0
-
-                    PlasmaExtras.Heading {
-                        level: 2
-                        text: i18n("Zcash")
-                    }
-
+                    PlasmaExtras.Heading { level: 2; text: root.coinName }
                     PlasmaComponents.Label {
                         text: i18n("Source: %1", root.cfgSource)
                         font.pointSize: Kirigami.Theme.smallFont.pointSize
@@ -181,19 +195,14 @@ PlasmoidItem {
                     }
                 }
 
-                // Connection status
                 ColumnLayout {
                     spacing: 2
                     visible: root.currentProvider?.supportsWebSocket
-
                     Rectangle {
                         Layout.alignment: Qt.AlignHCenter
-                        width: 8
-                        height: 8
-                        radius: 4
-                        color: root.isWebSocketConnected ? "#4CAF50" : "#F44336"
+                        width: 8; height: 8; radius: 4
+                        color: root.isWebSocketConnected ? root.upColor : root.downColor
                     }
-
                     PlasmaComponents.Label {
                         text: root.isWebSocketConnected ? i18n("Live") : i18n("Polling")
                         font.pointSize: Kirigami.Theme.smallFont.pointSize - 1
@@ -202,11 +211,8 @@ PlasmoidItem {
                 }
             }
 
-            Kirigami.Separator {
-                Layout.fillWidth: true
-            }
+            Kirigami.Separator { Layout.fillWidth: true }
 
-            // Price Display
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignHCenter
@@ -224,349 +230,252 @@ PlasmoidItem {
                     Layout.alignment: Qt.AlignHCenter
                     spacing: Kirigami.Units.mediumSpacing
                     visible: root.priceChange24h !== ""
-
                     PlasmaComponents.Label {
-                        text: i18n("24h Change:")
+                        text: i18n("24h:")
                         font.pointSize: Kirigami.Theme.smallFont.pointSize
                         opacity: 0.7
                     }
-
                     PlasmaComponents.Label {
                         text: root.priceChange24h
                         font.bold: true
-                        color: root.isPriceUp ? "#4CAF50" : "#F44336"
+                        color: root.isPriceUp ? root.upColor : root.downColor
                         font.pointSize: Kirigami.Theme.smallFont.pointSize + 1
                     }
                 }
-
-                // Error display
-                PlasmaComponents.Label {
-                    Layout.alignment: Qt.AlignHCenter
-                    Layout.fillWidth: true
-                    visible: root.errorMessage !== ""
-                    text: root.errorMessage
-                    color: "#F44336"
-                    font.pointSize: Kirigami.Theme.smallFont.pointSize
-                    wrapMode: Text.Wrap
-                    horizontalAlignment: Text.AlignHCenter
-                }
             }
 
-            Item {
-                Layout.fillHeight: true
-            }
+            Item { Layout.fillHeight: true }
 
-            // Action Buttons
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.mediumSpacing
-
                 Button {
                     Layout.fillWidth: true
                     text: i18n("Refresh")
                     icon.name: "view-refresh"
-                    enabled: !root.isLoading && !root.isWebSocketConnected
+                    enabled: !root.isLoading
                     onClicked: refreshPrice()
                 }
-
                 Button {
                     Layout.fillWidth: true
-                    text: i18n("Open Website")
+                    text: i18n("Open website")
                     icon.name: "internet-services"
                     onClicked: openProviderWebsite()
                 }
             }
 
-            // Last update time
             PlasmaComponents.Label {
                 Layout.alignment: Qt.AlignHCenter
-                text: root.isWebSocketConnected 
-                    ? i18n("Live WebSocket updates") 
-                    : i18n("Updates every %1 minutes", root.cfgRefreshRate)
+                text: root.isWebSocketConnected
+                    ? i18n("Live updates")
+                    : (root.lastSuccessfulUpdate && !isNaN(root.lastSuccessfulUpdate.getTime())
+                        ? i18n("Updated %1", Qt.formatTime(root.lastSuccessfulUpdate, Qt.locale().timeFormat(Locale.ShortFormat)))
+                        : i18n("Updates every %1 min", root.cfgRefreshRate))
                 font.pointSize: Kirigami.Theme.smallFont.pointSize - 1
-                opacity: 0.5
+                opacity: 0.55
             }
         }
     }
 
-    // ========== Timer for Polling Mode ==========
+    // ========== Timers ==========
     Timer {
         id: pollTimer
-        interval: root.cfgRefreshRate * 60 * 1000
+        interval: root.pollIntervalMs
         repeat: true
         triggeredOnStart: true
         onTriggered: fetchPrice()
     }
-    
-    // Health check timer - detects stale data
+
+    // Wall-clock drift watchdog: detects sleep/resume even without DBus.
     Timer {
-        id: healthCheckTimer
-        interval: 60000 // 1 minute
+        id: watchdog
+        interval: 30000
         repeat: true
+        running: true
         onTriggered: {
-            if (!root.isWebSocketConnected && !root.isLoading && root.consecutiveErrors === 0) {
-                var now = new Date();
-                var staleThreshold = 2 * root.cfgRefreshRate * 60 * 1000; // 2x refresh interval
-                if (root.lastSuccessfulUpdate && (now - root.lastSuccessfulUpdate) > staleThreshold) {
-                    console.log("ZcashPrice: Data may be stale, triggering refresh");
-                    refreshPrice();
-                }
+            var nowMs = Date.now();
+            var drift = root.lastTickEpoch ? (nowMs - root.lastTickEpoch) : 0;
+            root.lastTickEpoch = nowMs;
+            if (drift > 2 * watchdog.interval) {
+                root.handleWakeup();
             }
         }
     }
 
-    // ========== Context Menu Actions (Plasma 6) ==========
+    // ========== Event-driven recovery via DBus ==========
+    // Listens for login1 PrepareForSleep AND NetworkManager StateChanged.
+    // dbus-monitor + grep -m1 emits one matched line per event then exits;
+    // we restart on each event so memory stays bounded.
+    P5Support.DataSource {
+        id: dbusEvents
+        engine: "executable"
+        readonly property string cmd: `dbus-monitor --system "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" "type='signal',interface='org.freedesktop.NetworkManager',member='StateChanged'" 2>/dev/null | grep -m 1 -E 'PrepareForSleep|StateChanged'`
+        property int failureCount: 0
+
+        onNewData: (sourceName, data) => {
+            disconnectSource(sourceName);
+            var stdout = data && data.stdout ? data.stdout : "";
+            if (stdout.length > 0) {
+                failureCount = 0;
+                root.handleWakeup();
+                Qt.callLater(() => connectSource(sourceName));
+            } else {
+                // No stdout = grep didn't match (likely dbus-monitor unavailable
+                // or terminated early). Cap retries to avoid a spin loop.
+                failureCount++;
+                if (failureCount < 3) Qt.callLater(() => connectSource(sourceName));
+            }
+        }
+
+        Component.onCompleted: connectSource(cmd)
+        Component.onDestruction: disconnectSource(cmd)
+    }
+
+    // ========== Context menu ==========
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
-            text: i18n("Refresh Price")
+            text: i18n("Refresh price")
             icon.name: "view-refresh"
-            onTriggered: action_refresh()
+            onTriggered: refreshPrice()
         },
         PlasmaCore.Action {
-            text: i18n("Open Market Website")
+            text: i18n("Open market website")
             icon.name: "internet-services"
-            onTriggered: action_website()
+            onTriggered: openProviderWebsite()
         }
     ]
 
-    // ========== WebSocket Provider (Declarative) ==========
+    // ========== WebSocket loader ==========
     Loader {
         id: webSocketLoader
         active: false
         sourceComponent: webSocketComponent
-        
         onLoaded: {
-            // Explicitly connect signals in Qt6 style
-            item.priceUpdate.connect((price, change24h) => handlePriceUpdate(price, change24h));
-            item.connectionStatus.connect((connected) => handleConnectionStatus(connected));
-            item.error.connect((message) => handleError(message));
+            item.priceUpdate.connect(handlePriceUpdate);
+            item.connectionStatus.connect(handleConnectionStatus);
+            item.provider = currentProvider;
             item.connect();
         }
     }
-    
+
     Component {
         id: webSocketComponent
-        WebSocketProvider {
-            providerName: currentProvider ? currentProvider.name : ""
-            wsUrl: currentProvider ? currentProvider.wsUrl : ""
-            // Signal connections handled in onLoaded
-        }
+        WebSocketProvider {}
     }
 
-    // ========== Initialization ==========
+    // ========== Init ==========
     Component.onCompleted: {
+        lastTickEpoch = Date.now();
         setupProvider();
-        healthCheckTimer.start();
     }
 
-    // ========== Configuration Change Handlers ==========
     Connections {
         target: plasmoid.configuration
-        function onSourceChanged() { setupProvider(); }
-        function onCurrencyChanged() { setupProvider(); }
-        function onRefreshRateChanged() { restartPolling(); }
+        function onCoinChanged()         { setupProvider(); }
+        function onSourceChanged()       { setupProvider(); }
+        function onCurrencyChanged()     { setupProvider(); }
         function onUseWebSocketChanged() { setupProvider(); }
+        function onRefreshRateChanged()  { pollTimer.interval = pollIntervalMs; }
     }
 
-    // ========== Functions ==========
-
+    // ========== Core logic ==========
     function setupProvider() {
-        // Cleanup previous provider
         if (currentProvider) {
-            currentProvider.disconnect();
-            currentProvider.destroy();
+            try { currentProvider.disconnect(); } catch (e) {}
+            currentProvider = null;
         }
-        
-        // Disconnect WebSocket
-        if (webSocketLoader.item) {
-            webSocketLoader.item.disconnect();
-        }
+        if (webSocketLoader.item) webSocketLoader.item.disconnect();
         webSocketLoader.active = false;
-
-        errorMessage = "";
         isWebSocketConnected = false;
 
-        // Create new provider
-        currentProvider = PriceProvider.createProvider(cfgSource, {
-            onPriceUpdate: handlePriceUpdate,
-            onError: handleError,
-            onConnectionStatus: handleConnectionStatus,
-            currency: cfgCurrency,
-            useWebSocket: cfgUseWebSocket,
-            parent: root
-        });
+        currentProvider = PriceProvider.createProvider(cfgSource, cfgCoin);
+        if (!currentProvider) return;
 
-        if (!currentProvider) {
-            handleError(i18n("Unknown price source: %1", cfgSource));
-            return;
-        }
+        // Always start REST polling — it's stopped automatically when WS connects.
+        pollTimer.interval = pollIntervalMs;
+        pollTimer.restart();
 
-        // Decide between WebSocket and polling
         if (cfgUseWebSocket && currentProvider.supportsWebSocket) {
-            pollTimer.stop();
-            // Activate WebSocket provider
-            isLoading = true;  // Show loading state while connecting
             webSocketLoader.active = true;
-            
-            // Fallback: if WebSocket doesn't connect within 10 seconds, fetch via REST
-            Qt.callLater(function() {
-                if (isLoading && !isWebSocketConnected) {
-                    console.log("ZcashPrice: WebSocket taking too long, fetching via REST");
-                    fetchPrice();
-                }
-            }, 10000);
-        } else {
-            webSocketLoader.active = false;
-            restartPolling();
-        }
-    }
-
-    function restartPolling() {
-        if (!cfgUseWebSocket || !currentProvider?.supportsWebSocket) {
-            // Ensure timer is running and trigger immediately
-            pollTimer.stop();
-            pollTimer.start();
         }
     }
 
     function fetchPrice() {
         if (!currentProvider || isLoading) return;
-
         isLoading = true;
-        errorMessage = "";
-
         currentProvider.fetchPrice(function(price, change24h) {
             isLoading = false;
-            if (price !== null) {
-                updateDisplay(price, change24h);
-            }
+            if (price !== null) updateDisplay(price, change24h);
         });
     }
 
     function handlePriceUpdate(price, change24h) {
-        // Only update if we have valid data
         if (price === null || price === undefined) return;
-        
         isLoading = false;
-        consecutiveErrors = 0;
-        backoffMultiplier = 1;
-        pollTimer.interval = root.cfgRefreshRate * 60 * 1000;
         lastSuccessfulUpdate = new Date();
         updateDisplay(price, change24h);
-    }
-
-    function handleError(message) {
-        isLoading = false;
-        consecutiveErrors++;
-        
-        // If WebSocket failed, fall back to REST polling
-        if (cfgUseWebSocket && isWebSocketConnected === false && webSocketLoader.active) {
-            console.log("ZcashPrice: WebSocket error, falling back to REST polling");
-            webSocketLoader.active = false;
-            restartPolling();
-            fetchPrice(); // Immediate fetch via REST
-            errorMessage = i18n("WebSocket unavailable, using REST");
-            return;
-        }
-        
-        if (consecutiveErrors >= maxConsecutiveErrors) {
-            // Exponential backoff
-            backoffMultiplier = Math.min(backoffMultiplier * 2, 12); // Max 12x
-            var newInterval = root.cfgRefreshRate * 60 * 1000 * backoffMultiplier;
-            pollTimer.interval = newInterval;
-            errorMessage = i18n("Connection issues - reduced update frequency (%1x)", backoffMultiplier);
-            console.error("ZcashPrice: Too many errors, backing off to", newInterval, "ms");
-        } else {
-            errorMessage = message;
-        }
-        
-        console.error("ZcashPrice: Error (", consecutiveErrors, "/", maxConsecutiveErrors, "):", message);
     }
 
     function handleConnectionStatus(connected) {
         isWebSocketConnected = connected;
         if (connected) {
-            errorMessage = "";
+            // Live updates take over — stop hitting REST.
+            pollTimer.stop();
+        } else if (cfgUseWebSocket && currentProvider?.supportsWebSocket) {
+            // WS dropped — keep REST polling so price stays fresh while WS retries.
+            if (!pollTimer.running) {
+                pollTimer.interval = pollIntervalMs;
+                pollTimer.restart();
+            }
         }
+    }
+
+    // Triggered by DBus events (PrepareForSleep, NM StateChanged) or wall-clock drift.
+    function handleWakeup() {
+        if (cfgUseWebSocket && currentProvider?.supportsWebSocket) {
+            if (webSocketLoader.item) webSocketLoader.item.forceReconnect();
+            else webSocketLoader.active = true;
+        }
+        fetchPrice();
     }
 
     function updateDisplay(price, change24h) {
-        errorMessage = "";
+        var n = parseFloat(price);
+        if (isNaN(n)) { currentPrice = "—"; return; }
+        currentPrice = formatCurrency(cfgShowDecimals ? n : Math.floor(n));
 
-        // Format price
-        let numPrice = parseFloat(price);
-        if (isNaN(numPrice)) {
-            currentPrice = "N/A";
-            return;
-        }
-
-        if (cfgShowDecimals) {
-            currentPrice = formatCurrency(numPrice);
-        } else {
-            currentPrice = formatCurrency(Math.floor(numPrice));
-        }
-
-        // Format 24h change
         if (change24h !== undefined && change24h !== null) {
-            let numChange = parseFloat(change24h);
-            if (!isNaN(numChange)) {
-                isPriceUp = numChange >= 0;
-                let sign = isPriceUp ? "+" : "";
-                priceChange24h = sign + numChange.toFixed(2) + "%";
-            } else {
-                priceChange24h = "";
+            var c = parseFloat(change24h);
+            if (!isNaN(c)) {
+                isPriceUp = c >= 0;
+                priceChange24h = (isPriceUp ? "+" : "") + c.toFixed(2) + "%";
+                return;
             }
-        } else {
-            priceChange24h = "";
         }
+        priceChange24h = "";
     }
 
     function formatCurrency(value) {
-        // Use Number.toLocaleString for currency formatting
-        let symbol = PriceProvider.currencySymbols[cfgCurrency] || cfgCurrency;
+        var symbol = PriceProvider.currencySymbols[cfgCurrency] || cfgCurrency;
+        // Auto-precision for sub-dollar coins (e.g. ZIL at $0.0034).
+        var decimals = cfgShowDecimals
+            ? (value > 0 && value < 1 ? Math.min(6, Math.max(2, 2 - Math.floor(Math.log10(value)))) : 2)
+            : 0;
         try {
-            return Number(value).toLocaleString(Qt.locale(), 'f', cfgShowDecimals ? 2 : 0) + " " + symbol;
+            return Number(value).toLocaleString(Qt.locale(), 'f', decimals) + " " + symbol;
         } catch (e) {
-            return value.toFixed(cfgShowDecimals ? 2 : 0) + " " + symbol;
+            return value.toFixed(decimals) + " " + symbol;
         }
-    }
-
-    function formatTooltip() {
-        let text = "<b>" + currentPrice + "</b>";
-        if (priceChange24h !== "") {
-            let color = isPriceUp ? "#4CAF50" : "#F44336";
-            text += " <span style='color:" + color + "'>" + priceChange24h + "</span>";
-        }
-        text += "<br/>";
-        text += i18n("Source: %1", cfgSource);
-        if (errorMessage !== "") {
-            text += "<br/><span style='color:#F44336'>" + i18n("Error: %1", errorMessage) + "</span>";
-        }
-        return text;
     }
 
     function refreshPrice() {
-        if (isWebSocketConnected && webSocketLoader.item) {
-            // Force reconnect WebSocket
-            webSocketLoader.item.disconnect();
-            webSocketLoader.item.connect();
-        } else {
-            pollTimer.restart();
-            fetchPrice();
+        if (cfgUseWebSocket && currentProvider?.supportsWebSocket && webSocketLoader.item) {
+            webSocketLoader.item.forceReconnect();
         }
+        fetchPrice();
     }
 
     function openProviderWebsite() {
-        if (currentProvider?.homepage) {
-            Qt.openUrlExternally(currentProvider.homepage);
-        }
-    }
-
-    function action_refresh() {
-        refreshPrice();
-    }
-
-    function action_website() {
-        openProviderWebsite();
+        if (currentProvider?.homepage) Qt.openUrlExternally(currentProvider.homepage);
     }
 }

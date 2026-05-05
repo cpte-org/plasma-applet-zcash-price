@@ -1,4 +1,4 @@
-# Safe Testing Protocol for Zcash Price Applet
+# Safe Testing Protocol for Crypto Price Applet
 
 **⚠️ IMPORTANT**: Follow these steps in order to test safely without crashing your desktop.
 

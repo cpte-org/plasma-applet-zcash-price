@@ -1,4 +1,4 @@
-# Zcash Price Applet - Makefile for KDE Plasma 6
+# Crypto Price Applet - Makefile for KDE Plasma 6
 
 .PHONY: install install-user uninstall uninstall-user run test zip clean
 
@@ -43,7 +43,7 @@ lint:
 
 # Create distributable package
 zip:
-	zip -r zcash-price-2.0.0.plasmoid ./package/
+	zip -r crypto-price-3.1.0.plasmoid ./package/
 
 # Clean build artifacts
 clean:
@@ -51,7 +51,7 @@ clean:
 
 # Show help
 help:
-	@echo "Zcash Price Applet - Makefile targets:"
+	@echo "Crypto Price Applet - Makefile targets:"
 	@echo ""
 	@echo "  install-user    Install for current user (default)"
 	@echo "  install         Install system-wide (requires sudo)"

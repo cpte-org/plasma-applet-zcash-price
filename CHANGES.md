@@ -1,136 +1,67 @@
-# Zcash Price Applet v2.0.0 - Changes Summary
+# Changelog
 
-## Major Changes (Plasma 5 → 6 Migration)
+## 3.1.0
 
-### 1. Metadata Format
-- **Changed**: `metadata.desktop` → `metadata.json`
-- **Added**: `X-Plasma-API-Minimum-Version: "6.0"`
+### Multi-coin support
+- Tracks any of 50 coins (ZEC, BTC, ETH, SOL, XRP, ADA, AVAX, DOT, LINK, ATOM, NEAR, APT, SUI, TON, HBAR, ICP, XLM, ALGO, XTZ, EGLD, ARB, OP, POL, MNT, TIA, STX, UNI, AAVE, MKR, LDO, CRV, RUNE, GMX, DYDX, COMP, FIL, GRT, RNDR, API3, VET, INJ, MINA, KAVA, ROSE, SEI, FLOW, THETA, ZIL, IOTA, NEO).
+- New `coin` config setting (default `ZEC`).
+- Source dropdown auto-filters to sources that actually list the chosen coin; switching coins moves to a compatible source if needed.
+- Auto-precision price formatting (handles sub-dollar coins like ZIL at $0.0034).
 
-### 2. Root Element
-- **Changed**: `Item` → `PlasmoidItem`
-- **Impact**: Required for Plasma 6 compatibility
+### Two new sources
+- **Kraken** (REST).
+- **Coinbase Exchange** (REST).
 
-### 3. Import Statements
-- **Removed**: Version numbers from all imports
-- **Old**: `import org.kde.plasma.core 2.0 as PlasmaCore`
-- **New**: `import org.kde.plasma.core as PlasmaCore`
+Total sources: Binance, Coingecko, Bitfinex, Kraken, Coinbase.
 
-### 4. Configuration UI
-- **Changed**: `Kirigami.FormLayout` → `KCM.SimpleKCM` with `Kirigami.FormLayout`
-- **Old**: Direct property assignments
-- **New**: `cfg_` prefixed property binding
+### Event-driven recovery
+- DBus listener via `org.kde.plasma.plasma5support` watching:
+  - `org.freedesktop.login1.Manager.PrepareForSleep` (sleep/wake).
+  - `org.freedesktop.NetworkManager.StateChanged` (link/IP changes).
+- On any matching signal: WebSocket forced to reconnect, immediate REST fetch.
+- Pipeline self-restarts after each event so memory stays bounded.
+- Wall-clock drift watchdog (30s) kept as a safety net for systems without `dbus-monitor`.
 
-### 5. Attached Properties
-- **Fixed**: `backgroundHints` → `Plasmoid.backgroundHints`
-- **Note**: Must use `Plasmoid.` prefix for attached properties
+### WebSocket reliability
+- Unbounded retries (was: 3-attempt cap).
+- Capped exponential backoff: 1s → 2s → 4s → … → 60s, plus 0–1s jitter (was: linear 5s × n).
+- Provider-agnostic WS client — providers supply `wsSubscribeMessage()` / `wsParseMessage()`. No more per-source branching.
 
-## New Features
+### REST polling
+- Polls only when WebSocket is not connected. Stops automatically once WS comes back live, restarts when it drops.
+- Removed client-side polling backoff (it was leaving users on 12× intervals after a transient outage).
+- Fixed broken `Qt.callLater(fn, 10000)` (the second arg was ignored — replaced with a real Timer; subsequently removed entirely).
 
-### WebSocket Support
-- **Binance**: Real-time streaming via WebSocket
-- **Bitfinex**: Real-time streaming via WebSocket
-- **Coingecko**: REST only (no WebSocket available)
-- **Auto-reconnect**: With exponential backoff
-- **Fallback**: Automatic switch to polling on WebSocket failure
+### UI / UX
+- **Zcash logo removed**. Bundled `zcash.png` deleted. Replaced with a scalable, themed ticker badge (coin-colored circle with the ticker symbol).
+- **Tooltip removed**. No HTML on hover. No tooltip at all.
+- 24h change colors now use `Kirigami.Theme.positiveTextColor` / `negativeTextColor` (was hard-coded `#4CAF50` / `#F44336`).
+- Popup heading shows full coin name; "Updated HH:MM" replaces the static "every N min" once data is available.
+- Refresh button no longer disabled while WS is connected — always available.
 
-### Enhanced Display
-- **24h Price Change**: Shows percentage with color coding (green/red)
-- **Connection Indicator**: Green dot when WebSocket is live
-- **Error Display**: User-friendly error messages in tooltip and popup
+### Silent operation
+- All `console.log` / `console.warn` / `console.error` removed across the codebase.
+- All user-facing error strings removed. Failures return `null` silently. The connection dot is the only state indicator.
+- `errorMessage` state and rendering removed.
 
-### Stability Improvements
-- **Exponential Backoff**: Reduces API load during connection issues
-- **Health Check Timer**: Detects stale data and auto-refreshes
-- **Data Validation**: Sanity checks prevent displaying invalid prices
-- **Error Recovery**: Automatic reset after successful requests
+### Code quality
+- `consecutiveErrors`, `backoffMultiplier`, `maxConsecutiveErrors`, `wsFallbackTimer`, `wsUpgradeTimer`, `errorMessage` all dropped — single rule replaces them: REST polls when WS isn't connected.
+- Coin registry is the single source of truth for per-source identifiers, brand colors, and display names.
+- `metadata.json` icon set to `office-chart-line`; name is "Crypto Price".
 
-### Configuration Options (New)
-- `useWebSocket`: Toggle WebSocket for real-time updates
-- `showPriceChange`: Display 24h price change percentage
+### Breaking
+- `metadata.json` `Name` changed from "Zcash Price" to "Crypto Price". `Id` (`org.kde.plasma.zcashprice`) is unchanged so existing installs upgrade cleanly.
+- `images/zcash.png` deleted.
+- `console.*` and `errorMessage` removed (anyone reading widget logs for debugging will see nothing — this is by design).
 
-## Code Quality
+---
 
-### Error Handling
-- **JSON Parsing**: All `JSON.parse()` wrapped in try-catch
-- **HTML Detection**: Rejects HTML error pages
-- **Price Validation**: Sanity check ($1-$100,000 range)
-- **Network Timeouts**: 15-second timeout on all requests
+## 3.0.0 (internal)
 
-### Defensive Programming
-- **Null Checks**: All property access guarded
-- **Type Validation**: Required fields verified before use
-- **State Tracking**: Consecutive errors tracked with backoff
+Multi-coin foundation, provider-agnostic WS, theme-correct colors, initial DBus-less reconnect fixes (wall-clock drift detector, capped exponential backoff). Superseded by 3.1.0.
 
-## File Structure Changes
+---
 
-```
-Before (v1.x):
-├── metadata.desktop
-└── contents/
-    ├── code/
-    │   └── zcash.js (122 lines)
-    └── ui/
-        └── main.qml (161 lines)
+## 2.0.0
 
-After (v2.0):
-├── metadata.json
-└── contents/
-    ├── code/
-    │   └── PriceProvider.js (601 lines, WebSocket support)
-    └── ui/
-        └── main.qml (498 lines, hardened)
-```
-
-## API Sources Tested
-
-| Source | REST | WebSocket | Status |
-|--------|------|-----------|--------|
-| Binance | ✓ | ✓ | Recommended |
-| Coingecko | ✓ | ✗ | Rate limited |
-| Bitfinex | ✓ | ✓ | Good alternative |
-
-## Breaking Changes
-
-1. **Configuration not preserved** - Users must reconfigure after upgrade
-2. **Plasma 5 no longer supported** - Requires Plasma 6.0+
-3. **Default source changed** - Now defaults to Binance (was Cryptonator, removed)
-
-## Testing
-
-### Validation
-```bash
-./validate.sh  # Pre-flight check
-```
-
-### Safe Testing
-```bash
-plasmoidviewer --applet ./package/ --standalone
-```
-
-See [TESTING.md](TESTING.md) for complete testing protocol.
-
-## Migration for Users
-
-### From v1.x:
-1. Remove old version: `kpackagetool5 --remove org.kde.plasma.zcashprice`
-2. Install new version: `make install-user`
-3. Reconfigure settings (not preserved)
-
-### Clean Install:
-```bash
-make install-user
-```
-
-## Known Limitations
-
-1. **Coingecko Rate Limits**: Free tier allows ~30 calls/minute
-2. **WebSocket Firewalls**: Some networks block WebSocket connections
-3. **No Multi-Currency Conversion**: Only USD display supported currently
-
-## Performance
-
-- **Memory Usage**: ~10-15 MB (typical)
-- **CPU Usage**: <1% (idle), brief spikes during updates
-- **Network**: 
-  - Polling: 1 request per 5 minutes (default)
-  - WebSocket: Persistent connection, ~1 msg/sec
+Plasma 5 → Plasma 6 migration. Zcash-only. WebSocket support added for Binance and Bitfinex. See git history for details.

@@ -57,7 +57,6 @@ REQUIRED_FILES=(
     "package/contents/code/PriceProvider.js"
     "package/contents/config/main.xml"
     "package/contents/ui/config/configGeneral.qml"
-    "package/contents/images/zcash.png"
 )
 
 for file in "${REQUIRED_FILES[@]}"; do
