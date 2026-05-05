@@ -24,6 +24,9 @@ PlasmoidItem {
     property bool isLoading: false
     property bool isWebSocketConnected: false
     property var currentProvider: null
+    property int providerGeneration: 0
+    property string providerKey: ""
+    property string activeSource: ""
     property date lastSuccessfulUpdate
     property real lastTickEpoch: 0
 
@@ -47,10 +50,16 @@ PlasmoidItem {
     readonly property color upColor: Kirigami.Theme.positiveTextColor
     readonly property color downColor: Kirigami.Theme.negativeTextColor
 
-    // ---- No tooltip
+    // ---- No hover tooltip/popup
     preferredRepresentation: compactRepresentation
+    activationTogglesExpanded: false
     toolTipMainText: ""
     toolTipSubText: ""
+    toolTipItem: Item {
+        width: 0
+        height: 0
+        visible: false
+    }
     Plasmoid.backgroundHints: cfgShowBackground ? PlasmaCore.Types.StandardBackground : PlasmaCore.Types.NoBackground
 
     // ========== Coin badge ==========
@@ -189,7 +198,7 @@ PlasmoidItem {
                     spacing: 0
                     PlasmaExtras.Heading { level: 2; text: root.coinName }
                     PlasmaComponents.Label {
-                        text: i18n("Source: %1", root.cfgSource)
+                        text: i18n("Source: %1", root.activeSource || root.cfgSource)
                         font.pointSize: Kirigami.Theme.smallFont.pointSize
                         opacity: 0.7
                     }
@@ -369,17 +378,36 @@ PlasmoidItem {
         setupProvider();
     }
 
+    onCfgCoinChanged: setupProvider()
+    onCfgSourceChanged: setupProvider()
+    onCfgCurrencyChanged: setupProvider()
+    onCfgUseWebSocketChanged: setupProvider()
+    onCfgRefreshRateChanged: {
+        pollTimer.interval = pollIntervalMs;
+        if (pollTimer.running) pollTimer.restart();
+    }
+
     Connections {
         target: plasmoid.configuration
-        function onCoinChanged()         { setupProvider(); }
-        function onSourceChanged()       { setupProvider(); }
-        function onCurrencyChanged()     { setupProvider(); }
-        function onUseWebSocketChanged() { setupProvider(); }
-        function onRefreshRateChanged()  { pollTimer.interval = pollIntervalMs; }
+        function onValueChanged(key, _value) {
+            if (key === "coin" || key === "source" || key === "currency" || key === "useWebSocket") {
+                setupProvider();
+            } else if (key === "refreshRate") {
+                pollTimer.interval = pollIntervalMs;
+                if (pollTimer.running) pollTimer.restart();
+            }
+        }
     }
 
     // ========== Core logic ==========
     function setupProvider() {
+        var nextProviderKey = [cfgCoin, cfgSource, cfgCurrency, cfgUseWebSocket].join("|");
+        if (nextProviderKey === providerKey && currentProvider) return;
+        providerKey = nextProviderKey;
+
+        providerGeneration++;
+        var generation = providerGeneration;
+
         if (currentProvider) {
             try { currentProvider.disconnect(); } catch (e) {}
             currentProvider = null;
@@ -387,13 +415,24 @@ PlasmoidItem {
         if (webSocketLoader.item) webSocketLoader.item.disconnect();
         webSocketLoader.active = false;
         isWebSocketConnected = false;
+        isLoading = false;
+        currentPrice = "...";
+        priceChange24h = "";
+        activeSource = cfgSource;
 
-        currentProvider = PriceProvider.createProvider(cfgSource, cfgCoin);
+        currentProvider = PriceProvider.createProvider(activeSource, cfgCoin);
+        if (!currentProvider) {
+            var sources = PriceProvider.getSourcesForCoin(cfgCoin);
+            if (sources.length > 0) {
+                activeSource = sources[0];
+                currentProvider = PriceProvider.createProvider(activeSource, cfgCoin);
+            }
+        }
         if (!currentProvider) return;
 
         // Always start REST polling — it's stopped automatically when WS connects.
         pollTimer.interval = pollIntervalMs;
-        pollTimer.restart();
+        if (generation === providerGeneration) pollTimer.restart();
 
         if (cfgUseWebSocket && currentProvider.supportsWebSocket) {
             webSocketLoader.active = true;
@@ -402,8 +441,11 @@ PlasmoidItem {
 
     function fetchPrice() {
         if (!currentProvider || isLoading) return;
+        var generation = providerGeneration;
+        var provider = currentProvider;
         isLoading = true;
-        currentProvider.fetchPrice(function(price, change24h) {
+        provider.fetchPrice(function(price, change24h) {
+            if (generation !== providerGeneration || provider !== currentProvider) return;
             isLoading = false;
             if (price !== null) updateDisplay(price, change24h);
         });
