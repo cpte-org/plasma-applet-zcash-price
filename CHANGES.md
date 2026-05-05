@@ -8,6 +8,7 @@
 - The display resets while switching providers, making coin changes visible immediately.
 - If a saved source is not valid for the selected coin, the applet falls back to the first supported source.
 - Hover tooltip/popup behavior is explicitly disabled so hovering the panel applet stays silent.
+- User install/uninstall Makefile targets now specify `--type Plasma/Applet`, avoiding stale generic KPackage installs.
 
 ---
 

@@ -8,6 +8,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.kcmutils as KCM
+import org.kde.plasma.plasmoid
 import "../../code/PriceProvider.js" as PriceProvider
 
 KCM.SimpleKCM {
@@ -39,6 +40,44 @@ KCM.SimpleKCM {
     readonly property var sourcesForCoin: PriceProvider.getSourcesForCoin(cfg_coin)
     readonly property bool currentProviderSupportsWs: cfg_source === 'Binance' || cfg_source === 'Bitfinex'
 
+    function setConfig(key, value) {
+        if (Plasmoid.configuration[key] === value) return;
+        Plasmoid.configuration[key] = value;
+        if (Plasmoid.configuration.writeConfig) {
+            Plasmoid.configuration.writeConfig();
+        }
+    }
+
+    function setCoin(picked) {
+        if (!picked || picked === cfg_coin) return;
+
+        cfg_coin = picked;
+        setConfig("coin", picked);
+
+        // If current source no longer supports this coin, switch to the first available.
+        var sources = PriceProvider.getSourcesForCoin(picked);
+        if (sources.indexOf(cfg_source) === -1 && sources.length > 0) {
+            cfg_source = sources[0];
+            setConfig("source", cfg_source);
+        }
+    }
+
+    function syncSavedConfig() {
+        setConfig("coin", cfg_coin);
+        setConfig("source", cfg_source);
+        setConfig("currency", cfg_currency);
+        setConfig("refreshRate", cfg_refreshRate);
+        setConfig("useWebSocket", cfg_useWebSocket);
+        setConfig("showIcon", cfg_showIcon);
+        setConfig("showText", cfg_showText);
+        setConfig("showDecimals", cfg_showDecimals);
+        setConfig("showBackground", cfg_showBackground);
+        setConfig("onClickAction", cfg_onClickAction);
+        setConfig("showPriceChange", cfg_showPriceChange);
+    }
+
+    Component.onCompleted: syncSavedConfig()
+
     Kirigami.FormLayout {
         id: form
         Layout.fillWidth: true
@@ -64,13 +103,7 @@ KCM.SimpleKCM {
                 return 0;
             }
             onActivated: (idx) => {
-                var picked = coinModel[idx].ticker;
-                cfg_coin = picked;
-                // If current source no longer supports this coin, switch to the first available.
-                var sources = PriceProvider.getSourcesForCoin(picked);
-                if (sources.indexOf(cfg_source) === -1 && sources.length > 0) {
-                    cfg_source = sources[0];
-                }
+                setCoin(coinModel[idx].ticker);
             }
         }
 
@@ -86,7 +119,10 @@ KCM.SimpleKCM {
             Kirigami.FormData.label: i18n("Source:")
             model: sourcesForCoin
             currentIndex: Math.max(0, model.indexOf(cfg_source))
-            onActivated: cfg_source = currentText
+            onActivated: {
+                cfg_source = currentText;
+                setConfig("source", cfg_source);
+            }
         }
 
         Label {
@@ -116,7 +152,10 @@ KCM.SimpleKCM {
             visible: currentProviderSupportsWs
             checked: cfg_useWebSocket
             text: i18n("Use WebSocket for real-time updates")
-            onCheckedChanged: cfg_useWebSocket = checked
+            onCheckedChanged: {
+                cfg_useWebSocket = checked;
+                setConfig("useWebSocket", checked);
+            }
         }
 
         Label {
@@ -139,19 +178,28 @@ KCM.SimpleKCM {
             Kirigami.FormData.label: i18n("Currency:")
             model: PriceProvider.getCurrencies()
             currentIndex: Math.max(0, model.indexOf(cfg_currency))
-            onActivated: cfg_currency = currentText
+            onActivated: {
+                cfg_currency = currentText;
+                setConfig("currency", cfg_currency);
+            }
         }
 
         CheckBox {
             checked: cfg_showDecimals
             text: i18n("Show decimal places")
-            onCheckedChanged: cfg_showDecimals = checked
+            onCheckedChanged: {
+                cfg_showDecimals = checked;
+                setConfig("showDecimals", checked);
+            }
         }
 
         CheckBox {
             checked: cfg_showPriceChange
             text: i18n("Show 24h change")
-            onCheckedChanged: cfg_showPriceChange = checked
+            onCheckedChanged: {
+                cfg_showPriceChange = checked;
+                setConfig("showPriceChange", checked);
+            }
         }
 
         // ====== Refresh ======
@@ -170,7 +218,10 @@ KCM.SimpleKCM {
             value: cfg_refreshRate
             textFromValue: (v) => v + i18n(" min")
             valueFromText: (t) => parseInt(t)
-            onValueModified: cfg_refreshRate = value
+            onValueModified: {
+                cfg_refreshRate = value;
+                setConfig("refreshRate", value);
+            }
         }
 
         // ====== Widget ======
@@ -186,7 +237,12 @@ KCM.SimpleKCM {
             text: i18n("Show coin badge")
             onCheckedChanged: {
                 cfg_showIcon = checked;
-                if (!checked && !cfg_showText) { cfg_showText = true; showTextCheck.checked = true; }
+                setConfig("showIcon", checked);
+                if (!checked && !cfg_showText) {
+                    cfg_showText = true;
+                    showTextCheck.checked = true;
+                    setConfig("showText", true);
+                }
             }
         }
 
@@ -196,14 +252,22 @@ KCM.SimpleKCM {
             text: i18n("Show price text")
             onCheckedChanged: {
                 cfg_showText = checked;
-                if (!checked && !cfg_showIcon) { cfg_showIcon = true; showIconCheck.checked = true; }
+                setConfig("showText", checked);
+                if (!checked && !cfg_showIcon) {
+                    cfg_showIcon = true;
+                    showIconCheck.checked = true;
+                    setConfig("showIcon", true);
+                }
             }
         }
 
         CheckBox {
             checked: cfg_showBackground
             text: i18n("Show background")
-            onCheckedChanged: cfg_showBackground = checked
+            onCheckedChanged: {
+                cfg_showBackground = checked;
+                setConfig("showBackground", checked);
+            }
         }
 
         // ====== Click action ======
@@ -219,14 +283,20 @@ KCM.SimpleKCM {
             checked: cfg_onClickAction === "refresh"
             text: i18n("Refresh price")
             ButtonGroup.group: clickActionGroup
-            onCheckedChanged: if (checked) cfg_onClickAction = "refresh"
+            onCheckedChanged: if (checked) {
+                cfg_onClickAction = "refresh";
+                setConfig("onClickAction", cfg_onClickAction);
+            }
         }
 
         RadioButton {
             checked: cfg_onClickAction === "website"
             text: i18n("Open market website")
             ButtonGroup.group: clickActionGroup
-            onCheckedChanged: if (checked) cfg_onClickAction = "website"
+            onCheckedChanged: if (checked) {
+                cfg_onClickAction = "website";
+                setConfig("onClickAction", cfg_onClickAction);
+            }
         }
     }
 }

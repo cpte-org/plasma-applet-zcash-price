@@ -7,19 +7,19 @@ all: install-user
 
 # Install for current user
 install-user:
-	kpackagetool6 --install ./package/ || kpackagetool6 --upgrade ./package/
+	kpackagetool6 --type Plasma/Applet --install ./package/ || kpackagetool6 --type Plasma/Applet --upgrade ./package/
 
 # Install system-wide (requires root)
 install:
-	sudo kpackagetool6 --global --install ./package/ || sudo kpackagetool6 --global --upgrade ./package/
+	sudo kpackagetool6 --global --type Plasma/Applet --install ./package/ || sudo kpackagetool6 --global --type Plasma/Applet --upgrade ./package/
 
 # Uninstall for current user
 uninstall-user:
-	kpackagetool6 --remove org.kde.plasma.zcashprice
+	kpackagetool6 --type Plasma/Applet --remove org.kde.plasma.zcashprice
 
 # Uninstall system-wide
 uninstall:
-	sudo kpackagetool6 --global --remove org.kde.plasma.zcashprice
+	sudo kpackagetool6 --global --type Plasma/Applet --remove org.kde.plasma.zcashprice
 
 # Run in plasmoidviewer for testing
 run:

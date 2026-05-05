@@ -65,23 +65,21 @@ PlasmoidItem {
     // ========== Coin badge ==========
     Component {
         id: coinBadgeComponent
-        Rectangle {
+        Item {
             property real diameter: 16
             property string ticker: ""
             property color badgeColor: Kirigami.Theme.highlightColor
-            implicitWidth: diameter
+            implicitWidth: tickerLabel.implicitWidth
             implicitHeight: diameter
-            radius: diameter / 2
-            color: badgeColor
-            border.color: Qt.rgba(0, 0, 0, 0.15)
-            border.width: 1
-            Label {
+            PlasmaComponents.Label {
+                id: tickerLabel
                 anchors.centerIn: parent
                 text: parent.ticker
-                color: "white"
+                color: Kirigami.Theme.textColor
                 font.bold: true
-                font.pointSize: Math.max(6, parent.diameter * 0.32)
-                font.letterSpacing: -0.3
+                font.weight: Font.Bold
+                font.pointSize: Math.max(Kirigami.Theme.defaultFont.pointSize, parent.diameter * 0.55)
+                font.letterSpacing: 0
                 renderType: Text.NativeRendering
             }
         }
@@ -391,10 +389,12 @@ PlasmoidItem {
         target: plasmoid.configuration
         function onValueChanged(key, _value) {
             if (key === "coin" || key === "source" || key === "currency" || key === "useWebSocket") {
-                setupProvider();
+                Qt.callLater(setupProvider);
             } else if (key === "refreshRate") {
-                pollTimer.interval = pollIntervalMs;
-                if (pollTimer.running) pollTimer.restart();
+                Qt.callLater(function() {
+                    pollTimer.interval = pollIntervalMs;
+                    if (pollTimer.running) pollTimer.restart();
+                });
             }
         }
     }
