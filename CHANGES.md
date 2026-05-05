@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.2.0
+
+### Fixed
+- Coin changes from **Crypto Price Settings** now rebuild the active provider immediately.
+- Stale REST responses from the previous coin/source are ignored after settings change, so the old coin cannot repaint the applet.
+- The display resets while switching providers, making coin changes visible immediately.
+- If a saved source is not valid for the selected coin, the applet falls back to the first supported source.
+- Hover tooltip/popup behavior is explicitly disabled so hovering the panel applet stays silent.
+
+---
+
 ## 3.1.0
 
 ### Multi-coin support

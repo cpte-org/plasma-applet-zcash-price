@@ -43,7 +43,7 @@ lint:
 
 # Create distributable package
 zip:
-	zip -r crypto-price-3.1.0.plasmoid ./package/
+	zip -r crypto-price-3.2.0.plasmoid ./package/
 
 # Clean build artifacts
 clean:
