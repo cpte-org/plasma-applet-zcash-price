@@ -13,7 +13,7 @@
         "Id": "org.kde.plasma.zcashprice",
         "License": "GPL-3.0",
         "Name": "Crypto Price",
-        "Version": "3.3.0",
+        "Version": "3.4.0",
         "Website": "https://cpte-org.github.io"
     },
     "X-Plasma-API-Minimum-Version": "6.0"

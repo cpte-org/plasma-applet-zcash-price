@@ -2,7 +2,7 @@
 
 A lightweight, silent KDE Plasma 6 widget that tracks the live price of any of 50 supported cryptocurrencies.
 
-![Version](https://img.shields.io/badge/version-3.3.0-blue)
+![Version](https://img.shields.io/badge/version-3.4.0-blue)
 ![Plasma](https://img.shields.io/badge/Plasma-6.0+-1d99f3)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 

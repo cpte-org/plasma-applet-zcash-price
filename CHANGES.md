@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.4.0
+
+### Fixed
+- **Currency conversion**: picking EUR/GBP/JPY/BTC/ETH now actually converts the price instead of just changing the symbol on a USD value. All upstream sources return USD; conversion happens client-side.
+
+### Added
+- USD→{EUR,GBP,JPY,BTC,ETH} rate fetcher in `PriceProvider.js` (`ensureFxRates`, `convertFromUsd`, `invalidateFxRates`). Rates pulled from Coingecko using USDT as the USD proxy, cached in-memory for 1 hour, with concurrent-call coalescing.
+- Rates auto-refresh on wake/network-change events (cache invalidated in `handleWakeup`).
+
+### Changed
+- Each row stores raw `priceUsd`; display strings derive from it via `convertFromUsd` at format time.
+- Currency and decimal-places changes no longer tear down providers — they trigger `reformatAllPrices()`, so the switch is instant with no WebSocket reconnect or provider churn.
+
+---
+
 ## 3.3.0
 
 ### Multi-coin display modes
