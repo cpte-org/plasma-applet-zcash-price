@@ -15,6 +15,8 @@ KCM.SimpleKCM {
     id: configGeneral
 
     property string cfg_coin
+    property string cfg_displayMode
+    property var cfg_coins
     property string cfg_source
     property string cfg_currency
     property int cfg_refreshRate
@@ -64,6 +66,8 @@ KCM.SimpleKCM {
 
     function syncSavedConfig() {
         setConfig("coin", cfg_coin);
+        setConfig("displayMode", cfg_displayMode);
+        setConfig("coins", cfg_coins);
         setConfig("source", cfg_source);
         setConfig("currency", cfg_currency);
         setConfig("refreshRate", cfg_refreshRate);
@@ -76,27 +80,78 @@ KCM.SimpleKCM {
         setConfig("showPriceChange", cfg_showPriceChange);
     }
 
+    function isCoinChecked(ticker) {
+        if (!cfg_coins) return false;
+        for (var i = 0; i < cfg_coins.length; i++) {
+            if (("" + cfg_coins[i]).toUpperCase() === ticker) return true;
+        }
+        return false;
+    }
+
+    function toggleCoin(ticker, checked) {
+        var arr = [];
+        if (cfg_coins) {
+            for (var i = 0; i < cfg_coins.length; i++) {
+                var t = ("" + cfg_coins[i]).toUpperCase();
+                if (t !== ticker) arr.push(t);
+            }
+        }
+        if (checked) arr.push(ticker);
+        cfg_coins = arr;
+        setConfig("coins", arr);
+    }
+
     Component.onCompleted: syncSavedConfig()
 
     Kirigami.FormLayout {
         id: form
         Layout.fillWidth: true
 
-        // ====== Coin ======
+        // ====== Display mode ======
         Kirigami.Heading {
-            Kirigami.FormData.label: i18n("Coin")
+            Kirigami.FormData.label: i18n("Display mode")
             Kirigami.FormData.isSection: true
             level: 4
         }
 
+        ButtonGroup { id: modeGroup }
+
+        RadioButton {
+            Kirigami.FormData.label: i18n("Mode:")
+            checked: cfg_displayMode === "single"
+            text: i18n("Single coin")
+            ButtonGroup.group: modeGroup
+            onCheckedChanged: if (checked) { cfg_displayMode = "single"; setConfig("displayMode", "single"); }
+        }
+        RadioButton {
+            checked: cfg_displayMode === "rotation"
+            text: i18n("Rotation (TV news style)")
+            ButtonGroup.group: modeGroup
+            onCheckedChanged: if (checked) { cfg_displayMode = "rotation"; setConfig("displayMode", "rotation"); }
+        }
+        RadioButton {
+            checked: cfg_displayMode === "stacked"
+            text: i18n("Stacked (auto-scrolls when full)")
+            ButtonGroup.group: modeGroup
+            onCheckedChanged: if (checked) { cfg_displayMode = "stacked"; setConfig("displayMode", "stacked"); }
+        }
+
+        // ====== Coin (single mode) ======
+        Kirigami.Heading {
+            Kirigami.FormData.label: i18n("Coin")
+            Kirigami.FormData.isSection: true
+            level: 4
+            visible: cfg_displayMode === "single"
+        }
+
         ComboBox {
             id: coinCombo
+            visible: cfg_displayMode === "single"
             Kirigami.FormData.label: i18n("Track:")
             model: coinModel
             textRole: "label"
             valueRole: "ticker"
             editable: true
-            // simple substring filter on ticker or name
             currentIndex: {
                 for (var i = 0; i < coinModel.length; i++)
                     if (coinModel[i].ticker === cfg_coin) return i;
@@ -104,6 +159,41 @@ KCM.SimpleKCM {
             }
             onActivated: (idx) => {
                 setCoin(coinModel[idx].ticker);
+            }
+        }
+
+        // ====== Coins (multi-coin modes) ======
+        Kirigami.Heading {
+            Kirigami.FormData.label: i18n("Watchlist")
+            Kirigami.FormData.isSection: true
+            level: 4
+            visible: cfg_displayMode !== "single"
+        }
+
+        Label {
+            Kirigami.FormData.label: i18n("Coins:")
+            visible: cfg_displayMode !== "single"
+            text: i18n("Pick one or more — preferred source applies per coin, with fallback.")
+            font.pointSize: Kirigami.Theme.smallFont.pointSize
+            opacity: 0.7
+            wrapMode: Text.WordWrap
+        }
+
+        Flow {
+            visible: cfg_displayMode !== "single"
+            Layout.preferredWidth: 480
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.smallSpacing
+
+            Repeater {
+                model: coinModel
+                delegate: CheckBox {
+                    text: modelData.ticker
+                    checked: isCoinChecked(modelData.ticker)
+                    onToggled: toggleCoin(modelData.ticker, checked)
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.name
+                }
             }
         }
 

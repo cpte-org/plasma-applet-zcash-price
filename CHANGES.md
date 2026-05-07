@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.3.0
+
+### Multi-coin display modes
+- New **Display mode** setting with three options:
+  - **Single** — original behavior, one coin (backward compatible).
+  - **Rotation** — TV-news cross-fade through the watchlist every 5s. Hover pauses.
+  - **Stacked** — all watched coins side-by-side; marquee auto-scrolls at 30 px/s when content exceeds available width. Hover pauses. Click a coin to open its site.
+- New **Watchlist** config (`coins` StringList, default `ZEC,BTC,ETH`) — checkbox grid, used by rotation and stacked modes.
+- Per-coin source resolution with auto-fallback: each coin uses the configured source if listed there, otherwise the first available.
+
+### WebSocket multiplexing
+- One socket per source streams updates for all watched coins, instead of one socket per coin.
+- **Binance**: combined stream (`/stream?streams=...`) with per-symbol routing.
+- **Bitfinex**: multi-channel subscribe with chanId→coin mapping.
+- `WebSocketProvider.qml` now consumes a `multiSocket` descriptor and emits `priceUpdate(coin, price, change24h)` per symbol.
+
+### Dynamic panel width
+- Stacked mode uses `Layout.fillWidth: true` with content-driven max (capped at 600 px) and a 120 px minimum, so the applet shrinks when the panel needs space for app icons; the marquee absorbs overflow.
+- Single/rotation modes stay fixed at content width.
+
+### UI
+- Compact representation re-architected around a `ListModel` of watched coins with reactive role bindings, so prices live-update inside delegates without manual refresh paths.
+- Popup now lists every watched coin with badge, price, 24h change, and live status; click a row to open its market site.
+
+### Tooling
+- New `make restart-plasma` and `make reload` targets for fast iteration (`reload` = `install-user` + `restart-plasma`).
+
+---
+
 ## 3.2.0
 
 ### Fixed

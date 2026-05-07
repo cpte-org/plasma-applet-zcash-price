@@ -7,8 +7,18 @@
 
   <group name="General">
     <entry name="coin" type="String">
-      <label>Tracked coin (ticker symbol)</label>
+      <label>Tracked coin (single mode)</label>
       <default>ZEC</default>
+    </entry>
+
+    <entry name="displayMode" type="String">
+      <label>Display mode: single, rotation, or stacked</label>
+      <default>single</default>
+    </entry>
+
+    <entry name="coins" type="StringList">
+      <label>Tracked coins for multi-coin modes</label>
+      <default>ZEC,BTC,ETH</default>
     </entry>
 
     <entry name="source" type="String">

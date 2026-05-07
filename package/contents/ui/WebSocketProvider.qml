@@ -2,7 +2,11 @@
  *   Copyright (C) 2024 Crypto Price Applet Contributors
  *   SPDX-License-Identifier: GPL-3.0
  *
- *   Provider-agnostic WebSocket client. Silent: never logs.
+ *   Multi-symbol WebSocket client. Silent: never logs.
+ *
+ *   The `multiSocket` property is an object produced by
+ *   PriceProvider.createMultiSocket(source, coins): { wsUrl, coins,
+ *   subscribeMessages, parseMessage(data) -> [{coin, price, change24h}, ...] }.
  */
 
 import QtQuick
@@ -11,41 +15,47 @@ import QtWebSockets
 Item {
     id: root
 
-    property var provider: null
+    property var multiSocket: null
     property bool connected: webSocket.status === WebSocket.Open
     property int retryCount: 0
 
     readonly property int baseDelayMs: 1000
     readonly property int maxDelayMs: 60000
 
-    signal priceUpdate(real price, real change24h)
+    signal priceUpdate(string coin, real price, real change24h)
     signal connectionStatus(bool connected)
 
     WebSocket {
         id: webSocket
-        url: root.provider ? root.provider.wsUrl : ""
+        url: root.multiSocket ? root.multiSocket.wsUrl : ""
         active: false
 
         onStatusChanged: (status) => {
             if (status === WebSocket.Open) {
                 root.retryCount = 0;
                 root.connectionStatus(true);
-                var msg = root.provider ? root.provider.wsSubscribeMessage() : null;
-                if (msg) webSocket.sendTextMessage(msg);
+                if (root.multiSocket && root.multiSocket.subscribeMessages) {
+                    var msgs = root.multiSocket.subscribeMessages;
+                    for (var i = 0; i < msgs.length; i++) webSocket.sendTextMessage(msgs[i]);
+                }
             } else if (status === WebSocket.Closed || status === WebSocket.Error) {
-                if (root.connected) root.connectionStatus(false);
-                else root.connectionStatus(false);
+                root.connectionStatus(false);
                 root._scheduleReconnect();
             }
         }
 
         onTextMessageReceived: (message) => {
-            if (!root.provider || !message) return;
+            if (!root.multiSocket || !message) return;
             var data;
             try { data = JSON.parse(message); } catch (e) { return; }
-            var parsed = root.provider.wsParseMessage(data);
-            if (parsed && isFinite(parsed.price) && parsed.price > 0) {
-                root.priceUpdate(parsed.price, isFinite(parsed.change24h) ? parsed.change24h : 0);
+            var updates;
+            try { updates = root.multiSocket.parseMessage(data); } catch (e) { return; }
+            if (!Array.isArray(updates)) return;
+            for (var i = 0; i < updates.length; i++) {
+                var u = updates[i];
+                if (u && u.coin && isFinite(u.price) && u.price > 0) {
+                    root.priceUpdate(u.coin, u.price, isFinite(u.change24h) ? u.change24h : 0);
+                }
             }
         }
     }
@@ -54,7 +64,7 @@ Item {
         id: reconnectTimer
         repeat: false
         onTriggered: {
-            if (!root.provider) return;
+            if (!root.multiSocket) return;
             webSocket.active = false;
             webSocket.active = true;
         }
@@ -69,7 +79,7 @@ Item {
     }
 
     function connect() {
-        if (!provider || !provider.wsUrl) return;
+        if (!multiSocket || !multiSocket.wsUrl) return;
         retryCount = 0;
         reconnectTimer.stop();
         webSocket.active = true;

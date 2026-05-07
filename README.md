@@ -2,12 +2,18 @@
 
 A lightweight, silent KDE Plasma 6 widget that tracks the live price of any of 50 supported cryptocurrencies.
 
-![Version](https://img.shields.io/badge/version-3.2.0-blue)
+![Version](https://img.shields.io/badge/version-3.3.0-blue)
 ![Plasma](https://img.shields.io/badge/Plasma-6.0+-1d99f3)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 ## Features
 
+- **Three display modes**:
+  - **Single** — one coin, original compact look.
+  - **Rotation** — TV-news style: cycles through your watchlist with a cross-fade every 5s. Hover to pause.
+  - **Stacked** — all watched coins side-by-side; auto-scrolls (marquee) when content exceeds available width. Hover to pause. Click any coin to open its market site.
+- **Multi-symbol WebSockets**: one socket per source streams updates for many coins (Binance combined-stream, Bitfinex multi-channel). Watching 10 coins on Binance = 1 socket, not 10.
+- **Dynamic width**: stacked mode yields panel space to other widgets; the marquee handles overflow when crowded.
 - **50 coins**: ZEC, BTC, ETH, SOL, XRP, ADA, AVAX, DOT, LINK, ATOM, NEAR, APT, SUI, TON, HBAR, ICP, XLM, ALGO, XTZ, EGLD, ARB, OP, POL, MNT, TIA, STX, UNI, AAVE, MKR, LDO, CRV, RUNE, GMX, DYDX, COMP, FIL, GRT, RNDR, API3, VET, INJ, MINA, KAVA, ROSE, SEI, FLOW, THETA, ZIL, IOTA, NEO.
 - **5 sources**: Binance, Coingecko, Bitfinex, Kraken, Coinbase. Source list auto-filters to the ones that actually list the picked coin.
 - **Live updates** via WebSocket (Binance, Bitfinex). REST polling fallback for the others or when WS is unavailable.
@@ -44,8 +50,10 @@ After install, right-click the panel → "Add Widgets…" → search "Crypto Pri
 
 Right-click the widget → "Configure Crypto Price…":
 
-- **Coin**: ticker symbol (defaults to ZEC).
-- **Source**: filtered to sources that list the chosen coin (defaults to Binance).
+- **Display mode**: single / rotation / stacked.
+- **Coin** (single mode): ticker symbol (defaults to ZEC).
+- **Watchlist** (rotation/stacked): pick any number of coins.
+- **Source**: filtered to sources that list the chosen coin (defaults to Binance). In multi-coin modes, the preferred source is applied per coin with auto-fallback if a coin isn't listed there.
 - **WebSocket**: live updates when supported.
 - **Currency**: USD/EUR/GBP/JPY/BTC/ETH (display formatting only).
 - **Decimal places**, **24h change**, **coin badge**, **price text**, **background**.
@@ -96,6 +104,7 @@ make run             # plasmoidviewer
 make run-windowed    # standalone window
 make run-panel       # panel-simulated
 make lint            # qml syntax check
+make reload          # install-user + restart plasmashell (iteration loop)
 make zip             # build distributable .plasmoid
 ```
 

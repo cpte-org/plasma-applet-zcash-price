@@ -1,6 +1,6 @@
 # Crypto Price Applet - Makefile for KDE Plasma 6
 
-.PHONY: install install-user uninstall uninstall-user run test zip clean
+.PHONY: install install-user uninstall uninstall-user run test zip clean restart-plasma reload
 
 # Default target
 all: install-user
@@ -41,6 +41,16 @@ lint:
 		qml6 $$file --quit 2>&1 | head -5 || true; \
 	done
 
+# Restart plasmashell (picks up upgraded applet without logging out)
+restart-plasma:
+	-kquitapp6 plasmashell 2>/dev/null || killall plasmashell 2>/dev/null
+	@sleep 1
+	@kstart plasmashell >/dev/null 2>&1 &
+	@echo "plasmashell restarted"
+
+# Upgrade install + restart plasma in one shot
+reload: install-user restart-plasma
+
 # Create distributable package
 zip:
 	zip -r crypto-price-3.2.0.plasmoid ./package/
@@ -61,6 +71,8 @@ help:
 	@echo "  run-windowed    Run in standalone window"
 	@echo "  run-panel       Run simulating panel environment"
 	@echo "  lint            Check QML files for syntax issues"
+	@echo "  restart-plasma  Kill and restart plasmashell"
+	@echo "  reload          install-user + restart-plasma"
 	@echo "  zip             Create distributable .plasmoid file"
 	@echo "  clean           Remove build artifacts"
 	@echo "  help            Show this help message"

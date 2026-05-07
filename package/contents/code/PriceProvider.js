@@ -95,6 +95,85 @@ function createProvider(source, coin) {
     }
 }
 
+// ====== Multi-symbol WebSocket factory =================================
+// Returns an object describing a single WS that streams updates for many
+// coins from one source, or null if the source doesn't support WS or no
+// passed-in coin is tradable on it.
+//
+// Shape: { wsUrl, coins: [tickers], subscribeMessages: [strings to send on open],
+//          parseMessage(data) -> [{coin, price, change24h}, ...] }
+function createMultiSocket(source, coins) {
+    if (!Array.isArray(coins) || coins.length === 0) return null;
+    if (source === 'Binance')  return _binanceMultiSocket(coins);
+    if (source === 'Bitfinex') return _bitfinexMultiSocket(coins);
+    return null;
+}
+
+function _binanceMultiSocket(coins) {
+    var symToCoin = {};
+    var streams = [];
+    var valid = [];
+    for (var i = 0; i < coins.length; i++) {
+        var info = COINS[coins[i]];
+        if (!info || !info.binance) continue;
+        valid.push(coins[i]);
+        symToCoin[info.binance] = coins[i];
+        streams.push(info.binance.toLowerCase() + "@ticker");
+    }
+    if (!valid.length) return null;
+    return {
+        wsUrl: "wss://stream.binance.com:9443/stream?streams=" + streams.join("/"),
+        coins: valid,
+        subscribeMessages: [],
+        parseMessage: function(data) {
+            // Combined-stream wrapper: {stream: "...", data: {...}}
+            var d = data && data.data ? data.data : data;
+            if (!d || typeof d.s !== 'string') return [];
+            var coin = symToCoin[d.s]; if (!coin) return [];
+            var price = parseFloat(d.c);
+            var change = parseFloat(d.P);
+            if (!isFinite(price) || price <= 0) return [];
+            return [{ coin: coin, price: price, change24h: isFinite(change) ? change : 0 }];
+        }
+    };
+}
+
+function _bitfinexMultiSocket(coins) {
+    var symToCoin = {};
+    var msgs = [];
+    var valid = [];
+    for (var i = 0; i < coins.length; i++) {
+        var info = COINS[coins[i]];
+        if (!info || !info.bitfinex) continue;
+        valid.push(coins[i]);
+        symToCoin[info.bitfinex] = coins[i];
+        msgs.push(JSON.stringify({ event: "subscribe", channel: "ticker", symbol: info.bitfinex }));
+    }
+    if (!valid.length) return null;
+    var chanToCoin = {};
+    return {
+        wsUrl: "wss://api-pub.bitfinex.com/ws/2",
+        coins: valid,
+        subscribeMessages: msgs,
+        parseMessage: function(data) {
+            if (data && data.event === 'subscribed' && typeof data.symbol === 'string' && data.chanId !== undefined) {
+                var c = symToCoin[data.symbol];
+                if (c) chanToCoin[data.chanId] = c;
+                return [];
+            }
+            if (Array.isArray(data) && data.length >= 2 && Array.isArray(data[1]) && data[1].length >= 7) {
+                var coin = chanToCoin[data[0]];
+                if (!coin) return [];
+                var price = parseFloat(data[1][6]);
+                var change = parseFloat(data[1][5]) * 100;
+                if (!isFinite(price) || price <= 0) return [];
+                return [{ coin: coin, price: price, change24h: change }];
+            }
+            return [];
+        }
+    };
+}
+
 // ====== Base ===========================================================
 function BaseProvider(coin, info) {
     this.coin = coin;
