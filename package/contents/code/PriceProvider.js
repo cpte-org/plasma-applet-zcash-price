@@ -72,6 +72,79 @@ function getCoinInfo(t) { return COINS[t] || null; }
 function getSources() { return SOURCES.slice(); }
 function getCurrencies() { return Object.keys(currencySymbols); }
 
+// ====== FX rates (USD -> target) =======================================
+// All providers return USD prices. We multiply by a cached USD->target
+// rate to display in EUR/GBP/JPY/BTC/ETH. Rates fetched from Coingecko
+// using USDT as the USD proxy; cached for 1 hour per session.
+var _fxRates = { USD: 1.0 };
+var _fxFetchedAt = 0;
+var _fxFetching = false;
+var _fxWaiters = [];
+var _fxRequest = null;
+
+function _fxFlushWaiters() {
+    var ws = _fxWaiters; _fxWaiters = [];
+    for (var i = 0; i < ws.length; i++) {
+        try { ws[i](_fxRates); } catch (e) {}
+    }
+}
+
+function ensureFxRates(callback) {
+    if (typeof callback !== 'function') callback = function() {};
+    var now = Date.now();
+    var fresh = (now - _fxFetchedAt) < 60 * 60 * 1000;
+    if (fresh && _fxFetchedAt > 0) { callback(_fxRates); return; }
+    _fxWaiters.push(callback);
+    if (_fxFetching) return;
+    _fxFetching = true;
+
+    var xhr = new XMLHttpRequest();
+    _fxRequest = xhr;
+    xhr.timeout = 15000;
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState !== XMLHttpRequest.DONE) return;
+        _fxFetching = false; _fxRequest = null;
+        if (xhr.status === 200) {
+            try {
+                var d = JSON.parse(xhr.responseText);
+                var t = d && d.tether;
+                if (t) {
+                    var r = { USD: 1.0 };
+                    if (isFinite(t.eur)) r.EUR = t.eur;
+                    if (isFinite(t.gbp)) r.GBP = t.gbp;
+                    if (isFinite(t.jpy)) r.JPY = t.jpy;
+                    if (isFinite(t.btc)) r.BTC = t.btc;
+                    if (isFinite(t.eth)) r.ETH = t.eth;
+                    _fxRates = r;
+                    _fxFetchedAt = Date.now();
+                }
+            } catch (e) {}
+        }
+        _fxFlushWaiters();
+    };
+    xhr.ontimeout = function() { _fxFetching = false; _fxRequest = null; _fxFlushWaiters(); };
+    xhr.onerror   = function() { _fxFetching = false; _fxRequest = null; _fxFlushWaiters(); };
+    try {
+        xhr.open("GET", "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=usd,eur,gbp,jpy,btc,eth", true);
+        xhr.setRequestHeader("Accept", "application/json");
+        xhr.send();
+    } catch (e) {
+        _fxFetching = false; _fxRequest = null;
+        _fxFlushWaiters();
+    }
+}
+
+function convertFromUsd(usd, currency) {
+    if (!isFinite(usd)) return NaN;
+    if (!currency || currency === 'USD') return usd;
+    var r = _fxRates[currency];
+    if (!isFinite(r) || r <= 0) return usd;
+    return usd * r;
+}
+
+function fxReady() { return _fxFetchedAt > 0; }
+function invalidateFxRates() { _fxFetchedAt = 0; }
+
 function getSourcesForCoin(t) {
     var i = COINS[t]; if (!i) return [];
     var out = [];

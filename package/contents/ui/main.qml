@@ -579,6 +579,7 @@ PlasmoidItem {
     // ========== Init ==========
     Component.onCompleted: {
         lastTickEpoch = Date.now();
+        PriceProvider.ensureFxRates(function() { reformatAllPrices(); });
         rebuildModel();
     }
 
@@ -586,8 +587,11 @@ PlasmoidItem {
     onCfgDisplayModeChanged: rebuildModel()
     onCfgCoinsListChanged: rebuildModel()
     onCfgSourceChanged: rebuildModel()
-    onCfgCurrencyChanged: rebuildModel()
+    onCfgCurrencyChanged: {
+        PriceProvider.ensureFxRates(function() { reformatAllPrices(); });
+    }
     onCfgUseWebSocketChanged: rebuildModel()
+    onCfgShowDecimalsChanged: reformatAllPrices()
     onCfgRefreshRateChanged: {
         pollTimer.interval = pollIntervalMs;
         if (pollTimer.running) pollTimer.restart();
@@ -597,8 +601,14 @@ PlasmoidItem {
         target: plasmoid.configuration
         function onValueChanged(key, _value) {
             if (key === "coin" || key === "coins" || key === "displayMode" ||
-                key === "source" || key === "currency" || key === "useWebSocket") {
+                key === "source" || key === "useWebSocket") {
                 Qt.callLater(rebuildModel);
+            } else if (key === "currency") {
+                Qt.callLater(function() {
+                    PriceProvider.ensureFxRates(function() { reformatAllPrices(); });
+                });
+            } else if (key === "showDecimals") {
+                Qt.callLater(reformatAllPrices);
             } else if (key === "refreshRate") {
                 Qt.callLater(function() {
                     pollTimer.interval = pollIntervalMs;
@@ -611,7 +621,7 @@ PlasmoidItem {
     // ========== Core logic ==========
     function rebuildModel() {
         var nextCoins = effectiveCoins;
-        var nextKey = cfgDisplayMode + "|" + cfgSource + "|" + cfgCurrency + "|" +
+        var nextKey = cfgDisplayMode + "|" + cfgSource + "|" +
                       (cfgUseWebSocket ? "1" : "0") + "|" + nextCoins.join(",");
         if (nextKey === modelKey && coinModel.count === nextCoins.length) return;
         modelKey = nextKey;
@@ -647,7 +657,7 @@ PlasmoidItem {
                 homepage: p.homepage || "",
                 supportsWs: !!p.supportsWebSocket,
                 isWsConnected: false,
-                price: 0,
+                priceUsd: 0,
                 change24h: 0,
                 isUp: false,
                 displayPrice: "...",
@@ -705,8 +715,9 @@ PlasmoidItem {
         var c = parseFloat(change24h);
         var hasChange = isFinite(c);
         var isUp = hasChange ? c >= 0 : false;
-        coinModel.setProperty(idx, "price", n);
-        coinModel.setProperty(idx, "displayPrice", formatCurrency(cfgShowDecimals ? n : Math.floor(n)));
+        coinModel.setProperty(idx, "priceUsd", n);
+        var converted = PriceProvider.convertFromUsd(n, cfgCurrency);
+        coinModel.setProperty(idx, "displayPrice", formatCurrency(cfgShowDecimals ? converted : Math.floor(converted)));
         if (hasChange) {
             coinModel.setProperty(idx, "change24h", c);
             coinModel.setProperty(idx, "isUp", isUp);
@@ -715,6 +726,16 @@ PlasmoidItem {
             coinModel.setProperty(idx, "displayChange", "");
         }
         lastSuccessfulUpdate = new Date();
+    }
+
+    function reformatAllPrices() {
+        for (var i = 0; i < coinModel.count; i++) {
+            var row = coinModel.get(i);
+            if (row.priceUsd > 0) {
+                var v = PriceProvider.convertFromUsd(row.priceUsd, cfgCurrency);
+                coinModel.setProperty(i, "displayPrice", formatCurrency(cfgShowDecimals ? v : Math.floor(v)));
+            }
+        }
     }
 
     function handlePriceUpdate(coin, price, change24h) {
@@ -739,6 +760,8 @@ PlasmoidItem {
             var w = wsRepeater.itemAt(i);
             if (w) w.forceReconnect();
         }
+        PriceProvider.invalidateFxRates();
+        PriceProvider.ensureFxRates(function() { reformatAllPrices(); });
         fetchAllPrices();
     }
 
