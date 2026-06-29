@@ -55,8 +55,11 @@ echo "3. Checking required files..."
 REQUIRED_FILES=(
     "package/contents/ui/main.qml"
     "package/contents/code/PriceProvider.js"
+    "package/contents/config/config.qml"
     "package/contents/config/main.xml"
     "package/contents/ui/config/configGeneral.qml"
+    "package/contents/ui/config/configAlarms.qml"
+    "package/contents/ui/config/configDisplay.qml"
 )
 
 for file in "${REQUIRED_FILES[@]}"; do
@@ -119,6 +122,12 @@ if [ -f "package/contents/config/main.xml" ]; then
         check_pass "showPriceChange config present"
     else
         check_fail "showPriceChange config missing"
+    fi
+
+    if grep -q "priceAlarms" package/contents/config/main.xml; then
+        check_pass "priceAlarms config present"
+    else
+        check_fail "priceAlarms config missing"
     fi
 else
     check_fail "main.xml not found"

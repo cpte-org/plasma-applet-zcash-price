@@ -26,6 +26,16 @@
       <default>Binance</default>
     </entry>
 
+    <entry name="marketCache" type="String">
+      <label>Cached source market lists</label>
+      <default></default>
+    </entry>
+
+    <entry name="priceAlarms" type="String">
+      <label>Price alarm rules</label>
+      <default>[]</default>
+    </entry>
+
     <entry name="useWebSocket" type="Bool">
       <label>Use WebSocket for real-time updates</label>
       <default>true</default>

@@ -1,0 +1,39 @@
+1. Persist last good prices
+     Right now prices reset to ... after repeated failures. Better: keep last good price plus lastUpdatedAt, mark it
+     stale, and only show ... when there has never been a good value.
+
+  2. Add source-level backoff for REST
+     A failing source can still be polled repeatedly for every watched coin. Add per-source cooldown/backoff so
+     outages do not cause unnecessary requests.
+
+  3. Make curl fallback bounded and cancellable
+     Market-search fallback works now, but we should prevent overlapping curl refreshes, handle source changes
+     cleanly, and disconnect stale executable jobs.
+
+  4. Harden alarm config parsing
+     Validate alarm objects before use: coin exists, direction is valid, target is positive, currency is supported.
+     Drop malformed rules instead of carrying them forever.
+
+  5. Add tests for alarm crossing behavior
+     We have static alarm wiring tests, but not behavioral tests for above/below crossing, one-shot disabling, non-USD
+     FX readiness, and malformed alarm rules.
+
+  6. Add tests for WebSocket parsers
+     Binance/Bitfinex WS parser logic is critical and currently not directly tested. Add deterministic parser tests
+     for normal messages, subscription messages, malformed messages, and dynamic coins.
+
+  7. Package/install consistency check
+     Extend make test to verify metadata.json, README badge, changelog, Makefile zip name, and package id are all
+     consistent. Some of this exists in static tests, but it can be stricter.
+
+  8. Runtime dependency checks
+     curl, notify-send, and dbus-monitor are used. Add a settings/runtime dependency check path so missing optional
+     tools degrade clearly instead of silently.
+
+  9. Provider payload size mitigation
+     Binance market discovery downloads ~17 MB. That is heavy for a settings refresh. Consider a shorter timeout plus
+     fallback to cached data, or prefer smaller source endpoints where available.
+
+  10. Plasma UI smoke test target
+     make test covers logic well, but not the real Plasma host. Add a separate make test-ui using plasmoidviewer with
+     a timeout and log capture. Keep it separate because it is environment-dependent.

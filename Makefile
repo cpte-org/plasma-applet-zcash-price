@@ -41,6 +41,13 @@ lint:
 		qml6 $$file --quit 2>&1 | head -5 || true; \
 	done
 
+# Run static and provider/cache tests
+test:
+	./validate.sh
+	node tests/static_contracts.test.js
+	node tests/price_provider.test.js
+	bash tests/live_market_sources.sh
+
 # Restart plasmashell (picks up upgraded applet without logging out)
 restart-plasma:
 	-kquitapp6 plasmashell 2>/dev/null || killall plasmashell 2>/dev/null
@@ -53,7 +60,7 @@ reload: install-user restart-plasma
 
 # Create distributable package
 zip:
-	zip -r crypto-price-3.5.0.plasmoid ./package/
+	zip -r crypto-price-3.6.0.plasmoid ./package/
 
 # Clean build artifacts
 clean:
@@ -71,6 +78,7 @@ help:
 	@echo "  run-windowed    Run in standalone window"
 	@echo "  run-panel       Run simulating panel environment"
 	@echo "  lint            Check QML files for syntax issues"
+	@echo "  test            Run validation, applet contract, provider/cache, and live market smoke tests"
 	@echo "  restart-plasma  Kill and restart plasmashell"
 	@echo "  reload          install-user + restart-plasma"
 	@echo "  zip             Create distributable .plasmoid file"

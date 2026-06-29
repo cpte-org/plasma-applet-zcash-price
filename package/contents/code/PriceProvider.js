@@ -237,6 +237,7 @@ function invalidateFxRates() { _fxFetchedAt = 0; }
 // ====== Source market discovery =======================================
 var _marketCache = {};
 var _marketWaiters = {};
+var MARKET_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function _marketUrl(source) {
     switch (_sourceName(source)) {
@@ -344,14 +345,115 @@ function _parseMarkets(source, data) {
     }
 }
 
-function fetchSourceAssets(source, callback) {
+function getMarketUrl(source) {
+    return _marketUrl(source);
+}
+
+function parseSourceAssets(source, responseText) {
+    if (!responseText || responseText.charAt(0) === '<') return [];
+    try {
+        return _parseMarkets(source, JSON.parse(responseText));
+    } catch (e) {
+        return [];
+    }
+}
+
+function storeSourceAssets(source, items, at) {
+    var src = _sourceName(source);
+    if (!Array.isArray(items) || items.length === 0) return false;
+    _marketCache[src] = { at: isFinite(at) ? at : Date.now(), items: items };
+    return true;
+}
+
+function _compactMarketItems(items) {
+    var out = [];
+    if (!Array.isArray(items)) return out;
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        if (!item || !item.sourceId || !item.ticker) continue;
+        out.push([item.sourceId, item.ticker, item.name || item.ticker]);
+    }
+    return out;
+}
+
+function _hydrateMarketItems(source, items) {
+    var out = [];
+    if (!Array.isArray(items)) return out;
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        if (Array.isArray(item) && item.length >= 2) {
+            out.push(_makeDiscoveredAsset(source, item[0], item[1], item.length >= 3 ? item[2] : item[1]));
+        } else if (item && item.sourceId && item.ticker) {
+            out.push(_makeDiscoveredAsset(source, item.sourceId, item.ticker, item.name || item.ticker));
+        }
+    }
+    return out;
+}
+
+function restoreMarketCache(json) {
+    if (!json) return;
+    var parsed;
+    try { parsed = JSON.parse(json); } catch (e) { return; }
+    if (!parsed || typeof parsed !== "object") return;
+    for (var source in parsed) {
+        var entry = parsed[source];
+        if (!entry || !Array.isArray(entry.items) || !isFinite(entry.at)) continue;
+        var src = _sourceName(source);
+        var at = parseInt(entry.at);
+        var items = _hydrateMarketItems(src, entry.items);
+        if (!items.length) continue;
+        if (_marketCache[src] && _marketCache[src].at >= at) continue;
+        _marketCache[src] = { at: at, items: items };
+    }
+}
+
+function exportMarketCache() {
+    var out = {};
+    for (var source in _marketCache) {
+        var entry = _marketCache[source];
+        if (!entry || !Array.isArray(entry.items) || !isFinite(entry.at)) continue;
+        out[_sourceName(source)] = { at: entry.at, items: _compactMarketItems(entry.items) };
+    }
+    try { return JSON.stringify(out); } catch (e) { return ""; }
+}
+
+function getMarketCacheMeta(source) {
+    var src = _sourceName(source);
+    var entry = _marketCache[src];
+    if (!entry || !isFinite(entry.at)) return { source: src, at: 0, ageMs: -1, fresh: false, count: 0 };
+    var age = Date.now() - entry.at;
+    return {
+        source: src,
+        at: entry.at,
+        ageMs: age,
+        fresh: age >= 0 && age < MARKET_CACHE_TTL_MS,
+        count: Array.isArray(entry.items) ? entry.items.length : 0
+    };
+}
+
+function fetchSourceAssets(source, options, callback) {
+    if (typeof options === 'function') {
+        callback = options;
+        options = {};
+    }
+    options = options || {};
     if (typeof callback !== 'function') callback = function() {};
     var src = _sourceName(source);
     var cached = _marketCache[src];
     var now = Date.now();
-    if (cached && (now - cached.at) < 6 * 60 * 60 * 1000) {
-        callback(cached.items);
-        return;
+    var ttl = isFinite(options.ttlMs) ? options.ttlMs : MARKET_CACHE_TTL_MS;
+    var hasCache = cached && Array.isArray(cached.items);
+    var fresh = hasCache && (now - cached.at) >= 0 && (now - cached.at) < ttl;
+    var force = !!options.forceRefresh;
+    if (hasCache && !force && (fresh || options.allowStale)) {
+        callback(cached.items, {
+            source: src,
+            fromCache: true,
+            stale: !fresh,
+            refreshing: !fresh,
+            at: cached.at
+        });
+        if (fresh) return;
     }
     if (_marketWaiters[src]) {
         _marketWaiters[src].push(callback);
@@ -366,18 +468,39 @@ function fetchSourceAssets(source, callback) {
         if (xhr.status === 200 && xhr.responseText && xhr.responseText.charAt(0) !== '<') {
             try { items = _parseMarkets(src, JSON.parse(xhr.responseText)); } catch (e) { items = []; }
         }
-        _marketCache[src] = { at: Date.now(), items: items };
+        var ok = xhr.status === 200 && items.length > 0;
+        if (ok) _marketCache[src] = { at: Date.now(), items: items };
+        else if (hasCache) items = cached.items;
         var waiters = _marketWaiters[src] || [];
         delete _marketWaiters[src];
         for (var i = 0; i < waiters.length; i++) {
-            try { waiters[i](items); } catch (e) {}
+            try {
+                waiters[i](items, {
+                    source: src,
+                    fromCache: !ok && hasCache,
+                    stale: !ok,
+                    refreshing: false,
+                    failed: !ok,
+                    at: ok ? _marketCache[src].at : (hasCache ? cached.at : 0)
+                });
+            } catch (e) {}
         }
     };
     xhr.ontimeout = xhr.onerror = function() {
         var waiters = _marketWaiters[src] || [];
         delete _marketWaiters[src];
+        var fallback = hasCache ? cached.items : [];
         for (var i = 0; i < waiters.length; i++) {
-            try { waiters[i]([]); } catch (e) {}
+            try {
+                waiters[i](fallback, {
+                    source: src,
+                    fromCache: hasCache,
+                    stale: true,
+                    refreshing: false,
+                    failed: true,
+                    at: hasCache ? cached.at : 0
+                });
+            } catch (e) {}
         }
     };
     try {

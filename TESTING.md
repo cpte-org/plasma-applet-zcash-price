@@ -31,6 +31,17 @@ which plasmoidviewer kpackagetool6
 
 ## Phase 1: Syntax Validation (No Risk)
 
+### Run Project Tests
+```bash
+cd /home/besudo/Git/plasma-applet-zcash-price
+
+make test
+```
+
+This runs the pre-flight validator, static applet contract checks, provider/cache tests, and live `curl` smoke tests for market discovery. It covers parser filtering, cache restore/export, stale-cache fallback, settings-page wiring, alarm wiring, and live source endpoint shape.
+
+Full Plasma UI behavior still needs isolated runtime testing because the applet runs inside Plasma's QML host.
+
 ### Check QML Syntax
 ```bash
 cd /home/besudo/Git/plasma-applet-zcash-price

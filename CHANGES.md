@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.6.0
+
+### Added
+- Added one-shot watched-coin price alarms with KDE desktop notifications when a price breaks above or below a configured threshold.
+- Alarms are evaluated from the shared price-update path, so they work with both REST polling and WebSocket updates.
+- Alarm rules are stored in Plasma config, can be enabled/disabled or deleted, and use the selected display currency at creation time.
+- Triggered alarms are disabled, marked as triggered, and can be explicitly re-enabled from settings instead of automatically re-arming.
+- Split settings into focused **Coins**, **Alarms**, and **Display** pages instead of keeping every control in one General tab.
+
+### Hardening
+- Source market lists are cached in Plasma config for fast config search after plasmashell restarts.
+- Market-list cache uses a 24-hour TTL, loads cached data first, and refreshes only when missing, expired, or manually requested.
+- Added a manual **Refresh markets** action in settings with lightweight refresh status.
+- Added a `curl` fallback for settings market search when Plasma/QML `XMLHttpRequest` cannot load a source market list.
+- Added `make test` with static applet contract checks, provider/parser/cache coverage, and live `curl` smoke tests for market discovery behavior.
+
 ## 3.5.0
 
 ### Added

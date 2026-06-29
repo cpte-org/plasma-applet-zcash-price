@@ -2,7 +2,7 @@
 
 A lightweight, silent KDE Plasma 6 widget that tracks live cryptocurrency prices from supported market sources.
 
-![Version](https://img.shields.io/badge/version-3.5.0-blue)
+![Version](https://img.shields.io/badge/version-3.6.0-blue)
 ![Plasma](https://img.shields.io/badge/Plasma-6.0+-1d99f3)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
@@ -15,6 +15,7 @@ A lightweight, silent KDE Plasma 6 widget that tracks live cryptocurrency prices
 - **Multi-symbol WebSockets**: one socket per source streams updates for many coins (Binance combined-stream, Bitfinex multi-channel). Watching 10 coins on Binance = 1 socket, not 10.
 - **Dynamic width**: stacked mode yields panel space to other widgets; the marquee handles overflow when crowded.
 - **Curated defaults plus source search**: pick from the built-in common coins or search the selected source for any listed USD/USDT market.
+- **Price alarms**: get a one-shot desktop notification when a watched coin breaks above or below your configured price.
 - **5 sources**: Binance, Coingecko, Bitfinex, Kraken, Coinbase.
 - **Live updates** via WebSocket (Binance, Bitfinex). REST polling fallback for the others or when WS is unavailable.
 - **Themed coin badge** (no bundled logo). Ticker text on a coin-colored circle, scales cleanly at any panel size.
@@ -30,6 +31,8 @@ A lightweight, silent KDE Plasma 6 widget that tracks live cryptocurrency prices
 - Qt 6.0+
 - KDE Frameworks 6
 - `dbus-monitor` (for event-driven recovery; usually pre-installed)
+- `notify-send` (for price alarm desktop notifications; usually provided by `libnotify`)
+- `curl` (fallback for settings market search when Plasma's QML network path cannot load a market list)
 
 ## Installation
 
@@ -46,19 +49,23 @@ sudo make install
 
 After install, right-click the panel → "Add Widgets…" → search "Crypto Price".
 
+## Updating
+
+For manual installs from this repository, use:
+
+```bash
+make reload
+```
+
+This upgrades the applet and restarts Plasma Shell so the running widget picks up the new version.
+
 ## Configuration
 
 Right-click the widget → "Configure Crypto Price…":
 
-- **Display mode**: single / rotation / stacked.
-- **Coin** (single mode): pick a built-in coin or search the selected source for a listed market.
-- **Watchlist** (rotation/stacked): pick built-in coins or add markets from the selected source.
-- **Source**: provider used for source-backed search and preferred for built-in coins when available.
-- **WebSocket**: live updates when supported.
-- **Currency**: USD/EUR/GBP/JPY/BTC/ETH (display formatting only).
-- **Decimal places**, **24h change**, **coin badge**, **price text**, **background**.
-- **Refresh interval** (REST mode only).
-- **Click action**: refresh price or open market website.
+- **Coins**: display mode, single coin/watchlist, source-backed market search, data source, WebSocket.
+- **Alarms**: one-shot above/below alerts for watched coins in the selected display currency. Triggered alarms are marked as triggered and can be re-enabled from settings.
+- **Display**: currency, decimals, 24h change, coin badge, price text, background, REST refresh interval, click action.
 
 ## Source coverage
 
@@ -103,6 +110,7 @@ package/
 make run             # plasmoidviewer
 make run-windowed    # standalone window
 make run-panel       # panel-simulated
+make test            # validation + provider/cache tests
 make lint            # qml syntax check
 make reload          # install-user + restart plasmashell (iteration loop)
 make zip             # build distributable .plasmoid

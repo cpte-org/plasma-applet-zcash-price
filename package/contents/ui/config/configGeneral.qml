@@ -9,6 +9,7 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.kcmutils as KCM
 import org.kde.plasma.plasmoid
+import org.kde.plasma.plasma5support as P5Support
 import "../../code/PriceProvider.js" as PriceProvider
 
 KCM.SimpleKCM {
@@ -18,18 +19,16 @@ KCM.SimpleKCM {
     property string cfg_displayMode
     property var cfg_coins
     property string cfg_source
-    property string cfg_currency
-    property int cfg_refreshRate
+    property string cfg_marketCache
     property bool cfg_useWebSocket
-    property bool cfg_showIcon
-    property bool cfg_showText
-    property bool cfg_showDecimals
-    property bool cfg_showBackground
-    property string cfg_onClickAction
-    property bool cfg_showPriceChange
     property string marketSearch: ""
     property var sourceMarkets: []
     property var filteredSourceMarkets: []
+    property bool marketRefreshing: false
+    property bool marketRefreshFailed: false
+    property bool marketUsingCachedFallback: false
+    property real marketUpdatedAt: 0
+    property string pendingCurlMarketSource: ""
 
     readonly property var allCoins: PriceProvider.getCoins()
     readonly property var coinModel: {
@@ -57,7 +56,6 @@ KCM.SimpleKCM {
         }
         return out;
     }
-
     function setConfig(key, value) {
         if (Plasmoid.configuration[key] === value) return;
         Plasmoid.configuration[key] = value;
@@ -85,15 +83,8 @@ KCM.SimpleKCM {
         setConfig("displayMode", cfg_displayMode);
         setConfig("coins", cfg_coins);
         setConfig("source", cfg_source);
-        setConfig("currency", cfg_currency);
-        setConfig("refreshRate", cfg_refreshRate);
+        setConfig("marketCache", cfg_marketCache);
         setConfig("useWebSocket", cfg_useWebSocket);
-        setConfig("showIcon", cfg_showIcon);
-        setConfig("showText", cfg_showText);
-        setConfig("showDecimals", cfg_showDecimals);
-        setConfig("showBackground", cfg_showBackground);
-        setConfig("onClickAction", cfg_onClickAction);
-        setConfig("showPriceChange", cfg_showPriceChange);
     }
 
     function normalizeAssetRef(ref) {
@@ -136,17 +127,98 @@ KCM.SimpleKCM {
     }
 
     function loadSourceMarkets() {
+        loadSourceMarketsWithMode(false);
+    }
+
+    function loadSourceMarketsWithMode(forceRefresh) {
         var source = cfg_source || "Binance";
-        sourceMarkets = [];
-        filteredSourceMarkets = [];
-        PriceProvider.fetchSourceAssets(source, function(items) {
+        marketRefreshing = true;
+        marketRefreshFailed = false;
+        marketUsingCachedFallback = false;
+        if (sourceMarkets.length === 0) filteredSourceMarkets = [];
+        PriceProvider.fetchSourceAssets(source, {
+            forceRefresh: forceRefresh,
+            allowStale: true,
+            ttlMs: PriceProvider.MARKET_CACHE_TTL_MS
+        }, function(items, meta) {
             if (source !== cfg_source) return;
             sourceMarkets = items || [];
+            marketRefreshing = !!(meta && meta.refreshing);
+            marketRefreshFailed = !!(meta && meta.failed && forceRefresh && sourceMarkets.length === 0);
+            marketUsingCachedFallback = !!(meta && meta.failed && sourceMarkets.length > 0);
+            marketUpdatedAt = meta && meta.at ? meta.at : 0;
+            if (meta && !meta.fromCache && !meta.failed) {
+                cfg_marketCache = PriceProvider.exportMarketCache();
+                setConfig("marketCache", cfg_marketCache);
+            }
             refreshMarketFilter();
+            if (meta && meta.failed && sourceMarkets.length === 0) {
+                fetchSourceMarketsWithCurl(source);
+            }
         });
     }
 
+    function shellQuote(value) {
+        return "'" + ("" + value).replace(/'/g, "'\\''") + "'";
+    }
+
+    function fetchSourceMarketsWithCurl(source) {
+        var url = PriceProvider.getMarketUrl(source);
+        if (!url) {
+            marketRefreshing = false;
+            marketRefreshFailed = true;
+            return;
+        }
+        pendingCurlMarketSource = source;
+        marketRefreshing = true;
+        marketRefreshFailed = false;
+        var cmd = "curl -L -sS --max-time 25 -H " + shellQuote("Accept: application/json") + " " + shellQuote(url);
+        marketCurlSource.connectSource(cmd);
+    }
+
+    P5Support.DataSource {
+        id: marketCurlSource
+        engine: "executable"
+        onNewData: (sourceName, data) => {
+            disconnectSource(sourceName);
+            var source = pendingCurlMarketSource || cfg_source || "Binance";
+            pendingCurlMarketSource = "";
+            var stdout = data && data.stdout ? data.stdout : "";
+            var items = PriceProvider.parseSourceAssets(source, stdout);
+            if (items.length > 0) {
+                PriceProvider.storeSourceAssets(source, items, Date.now());
+                cfg_marketCache = PriceProvider.exportMarketCache();
+                setConfig("marketCache", cfg_marketCache);
+                if (source !== cfg_source) return;
+                sourceMarkets = items;
+                marketRefreshing = false;
+                marketRefreshFailed = false;
+                marketUsingCachedFallback = false;
+                marketUpdatedAt = Date.now();
+                refreshMarketFilter();
+            } else if (source === cfg_source) {
+                marketRefreshing = false;
+                marketRefreshFailed = true;
+                marketUsingCachedFallback = false;
+                refreshMarketFilter();
+            }
+        }
+    }
+
+    function marketStatusText() {
+        if (marketRefreshing) return i18n("Refreshing...");
+        if (marketUpdatedAt > 0 && marketUsingCachedFallback) {
+            return i18n("Using cached markets from %1", Qt.formatDateTime(new Date(marketUpdatedAt), Qt.locale().dateTimeFormat(Locale.ShortFormat)));
+        }
+        if (marketUpdatedAt > 0) {
+            return i18n("Updated %1", Qt.formatDateTime(new Date(marketUpdatedAt), Qt.locale().dateTimeFormat(Locale.ShortFormat)));
+        }
+        if (marketRefreshFailed) return i18n("Market search unavailable");
+        return i18n("Market search not loaded");
+    }
+
     Component.onCompleted: {
+        PriceProvider.restoreMarketCache(cfg_marketCache);
         syncSavedConfig();
         loadSourceMarkets();
     }
@@ -244,6 +316,24 @@ KCM.SimpleKCM {
             }
         }
 
+        RowLayout {
+            visible: cfg_displayMode === "single"
+            Layout.fillWidth: true
+            Button {
+                icon.name: "view-refresh"
+                text: i18n("Refresh markets")
+                enabled: !marketRefreshing
+                onClicked: loadSourceMarketsWithMode(true)
+            }
+            Label {
+                Layout.fillWidth: true
+                text: marketStatusText()
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                opacity: 0.7
+                elide: Text.ElideRight
+            }
+        }
+
         // ====== Coins (multi-coin modes) ======
         Kirigami.Heading {
             Kirigami.FormData.label: i18n("Watchlist")
@@ -269,12 +359,30 @@ KCM.SimpleKCM {
 
             Repeater {
                 model: coinModel
-                delegate: CheckBox {
+                delegate: Button {
                     text: modelData.ticker
+                    checkable: true
                     checked: isCoinChecked(modelData.ticker)
+                    horizontalPadding: Kirigami.Units.largeSpacing
+                    verticalPadding: Kirigami.Units.smallSpacing
                     onToggled: toggleCoin(modelData.ticker, checked)
                     ToolTip.visible: hovered
                     ToolTip.text: modelData.name
+
+                    contentItem: Label {
+                        text: parent.text
+                        color: parent.checked ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
+                        font.bold: parent.checked
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    background: Rectangle {
+                        radius: Kirigami.Units.smallSpacing
+                        color: parent.checked ? Kirigami.Theme.highlightColor : "transparent"
+                        border.width: 1
+                        border.color: parent.checked ? Kirigami.Theme.highlightColor : Kirigami.Theme.disabledTextColor
+                    }
                 }
             }
         }
@@ -287,12 +395,30 @@ KCM.SimpleKCM {
 
             Repeater {
                 model: selectedDynamicCoins
-                delegate: CheckBox {
+                delegate: Button {
                     text: modelData.ticker
+                    checkable: true
                     checked: true
+                    horizontalPadding: Kirigami.Units.largeSpacing
+                    verticalPadding: Kirigami.Units.smallSpacing
                     onToggled: if (!checked) toggleCoin(modelData.key, false)
                     ToolTip.visible: hovered
                     ToolTip.text: modelData.name
+
+                    contentItem: Label {
+                        text: parent.text
+                        color: Kirigami.Theme.highlightedTextColor
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    background: Rectangle {
+                        radius: Kirigami.Units.smallSpacing
+                        color: Kirigami.Theme.highlightColor
+                        border.width: 1
+                        border.color: Kirigami.Theme.highlightColor
+                    }
                 }
             }
         }
@@ -326,6 +452,24 @@ KCM.SimpleKCM {
                     var a = filteredSourceMarkets[multiMarketCombo.currentIndex];
                     if (a) toggleCoin(a.key, true);
                 }
+            }
+        }
+
+        RowLayout {
+            visible: cfg_displayMode !== "single"
+            Layout.fillWidth: true
+            Button {
+                icon.name: "view-refresh"
+                text: i18n("Refresh markets")
+                enabled: !marketRefreshing
+                onClicked: loadSourceMarketsWithMode(true)
+            }
+            Label {
+                Layout.fillWidth: true
+                text: marketStatusText()
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                opacity: 0.7
+                elide: Text.ElideRight
             }
         }
 
@@ -389,137 +533,5 @@ KCM.SimpleKCM {
             leftPadding: Kirigami.Units.mediumSpacing
         }
 
-        // ====== Currency ======
-        Kirigami.Heading {
-            Kirigami.FormData.label: i18n("Display")
-            Kirigami.FormData.isSection: true
-            level: 4
-        }
-
-        ComboBox {
-            id: currencyCombo
-            Kirigami.FormData.label: i18n("Currency:")
-            model: PriceProvider.getCurrencies()
-            currentIndex: Math.max(0, model.indexOf(cfg_currency))
-            onActivated: {
-                cfg_currency = currentText;
-                setConfig("currency", cfg_currency);
-            }
-        }
-
-        CheckBox {
-            checked: cfg_showDecimals
-            text: i18n("Show decimal places")
-            onCheckedChanged: {
-                cfg_showDecimals = checked;
-                setConfig("showDecimals", checked);
-            }
-        }
-
-        CheckBox {
-            checked: cfg_showPriceChange
-            text: i18n("Show 24h change")
-            onCheckedChanged: {
-                cfg_showPriceChange = checked;
-                setConfig("showPriceChange", checked);
-            }
-        }
-
-        // ====== Refresh ======
-        Kirigami.Heading {
-            Kirigami.FormData.label: i18n("Refresh")
-            Kirigami.FormData.isSection: true
-            level: 4
-            visible: !cfg_useWebSocket || !currentProviderSupportsWs
-        }
-
-        SpinBox {
-            Kirigami.FormData.label: i18n("Interval:")
-            visible: !cfg_useWebSocket || !currentProviderSupportsWs
-            from: 1
-            to: 60
-            value: cfg_refreshRate
-            textFromValue: (v) => v + i18n(" min")
-            valueFromText: (t) => parseInt(t)
-            onValueModified: {
-                cfg_refreshRate = value;
-                setConfig("refreshRate", value);
-            }
-        }
-
-        // ====== Widget ======
-        Kirigami.Heading {
-            Kirigami.FormData.label: i18n("Widget")
-            Kirigami.FormData.isSection: true
-            level: 4
-        }
-
-        CheckBox {
-            id: showIconCheck
-            checked: cfg_showIcon
-            text: i18n("Show coin badge")
-            onCheckedChanged: {
-                cfg_showIcon = checked;
-                setConfig("showIcon", checked);
-                if (!checked && !cfg_showText) {
-                    cfg_showText = true;
-                    showTextCheck.checked = true;
-                    setConfig("showText", true);
-                }
-            }
-        }
-
-        CheckBox {
-            id: showTextCheck
-            checked: cfg_showText
-            text: i18n("Show price text")
-            onCheckedChanged: {
-                cfg_showText = checked;
-                setConfig("showText", checked);
-                if (!checked && !cfg_showIcon) {
-                    cfg_showIcon = true;
-                    showIconCheck.checked = true;
-                    setConfig("showIcon", true);
-                }
-            }
-        }
-
-        CheckBox {
-            checked: cfg_showBackground
-            text: i18n("Show background")
-            onCheckedChanged: {
-                cfg_showBackground = checked;
-                setConfig("showBackground", checked);
-            }
-        }
-
-        // ====== Click action ======
-        Kirigami.Heading {
-            Kirigami.FormData.label: i18n("Click action")
-            Kirigami.FormData.isSection: true
-            level: 4
-        }
-
-        ButtonGroup { id: clickActionGroup }
-
-        RadioButton {
-            checked: cfg_onClickAction === "refresh"
-            text: i18n("Refresh price")
-            ButtonGroup.group: clickActionGroup
-            onCheckedChanged: if (checked) {
-                cfg_onClickAction = "refresh";
-                setConfig("onClickAction", cfg_onClickAction);
-            }
-        }
-
-        RadioButton {
-            checked: cfg_onClickAction === "website"
-            text: i18n("Open market website")
-            ButtonGroup.group: clickActionGroup
-            onCheckedChanged: if (checked) {
-                cfg_onClickAction = "website";
-                setConfig("onClickAction", cfg_onClickAction);
-            }
-        }
     }
 }

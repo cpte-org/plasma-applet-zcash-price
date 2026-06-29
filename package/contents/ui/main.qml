@@ -25,6 +25,7 @@ PlasmoidItem {
     property real lastTickEpoch: 0
     property bool anyWsConnected: false
     property bool compactHovered: false
+    property var priceAlarmRules: []
 
     // Multi-coin model. One row per effective coin.
     ListModel { id: coinModel }
@@ -34,6 +35,7 @@ PlasmoidItem {
     readonly property string cfgDisplayMode: plasmoid.configuration.displayMode
     readonly property var cfgCoinsList: plasmoid.configuration.coins
     readonly property string cfgSource: plasmoid.configuration.source
+    readonly property string cfgPriceAlarms: plasmoid.configuration.priceAlarms
     readonly property string cfgCurrency: plasmoid.configuration.currency
     readonly property int cfgRefreshRate: plasmoid.configuration.refreshRate
     readonly property bool cfgUseWebSocket: plasmoid.configuration.useWebSocket
@@ -580,6 +582,7 @@ PlasmoidItem {
     // ========== Init ==========
     Component.onCompleted: {
         lastTickEpoch = Date.now();
+        refreshPriceAlarmRules();
         PriceProvider.ensureFxRates(function() { reformatAllPrices(); });
         rebuildModel();
     }
@@ -591,6 +594,7 @@ PlasmoidItem {
     onCfgCurrencyChanged: {
         PriceProvider.ensureFxRates(function() { reformatAllPrices(); });
     }
+    onCfgPriceAlarmsChanged: refreshPriceAlarmRules()
     onCfgUseWebSocketChanged: rebuildModel()
     onCfgShowDecimalsChanged: reformatAllPrices()
     onCfgRefreshRateChanged: {
@@ -608,6 +612,8 @@ PlasmoidItem {
                 Qt.callLater(function() {
                     PriceProvider.ensureFxRates(function() { reformatAllPrices(); });
                 });
+            } else if (key === "priceAlarms") {
+                Qt.callLater(refreshPriceAlarmRules);
             } else if (key === "showDecimals") {
                 Qt.callLater(reformatAllPrices);
             } else if (key === "refreshRate") {
@@ -732,6 +738,8 @@ PlasmoidItem {
 
     function applyUpdate(coin, price, change24h) {
         var idx = findRowIndex(coin); if (idx < 0) return;
+        var row = coinModel.get(idx);
+        var previousUsd = row.priceUsd || 0;
         var n = parseFloat(price);
         if (!isFinite(n)) return;
         var c = parseFloat(change24h);
@@ -750,6 +758,7 @@ PlasmoidItem {
             coinModel.setProperty(idx, "displayChange", "");
         }
         lastSuccessfulUpdate = new Date();
+        evaluatePriceAlarms(coin, previousUsd, n);
     }
 
     function reformatAllPrices() {
@@ -795,6 +804,113 @@ PlasmoidItem {
             if (w) w.forceReconnect();
         }
         fetchAllPrices();
+    }
+
+    function parsePriceAlarms() {
+        try {
+            var arr = JSON.parse(cfgPriceAlarms || "[]");
+            return arr instanceof Array ? arr : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function refreshPriceAlarmRules() {
+        priceAlarmRules = parsePriceAlarms();
+    }
+
+    function savePriceAlarmRules(alarms) {
+        priceAlarmRules = alarms || [];
+        plasmoid.configuration.priceAlarms = JSON.stringify(priceAlarmRules);
+        if (plasmoid.configuration.writeConfig) {
+            plasmoid.configuration.writeConfig();
+        }
+    }
+
+    function alarmMatchesCoin(alarmCoin, coin) {
+        return ("" + alarmCoin) === ("" + coin);
+    }
+
+    function evaluatePriceAlarms(coin, previousUsd, currentUsd) {
+        if (!isFinite(currentUsd) || currentUsd <= 0) return;
+        var alarms = priceAlarmRules || [];
+        if (!alarms.length) return;
+
+        var changedAlarms = false;
+        var nextAlarms = alarms.slice();
+        for (var i = 0; i < alarms.length; i++) {
+            var alarm = alarms[i] || {};
+            if (alarm.enabled === false || alarm.triggeredAt || !alarmMatchesCoin(alarm.coin, coin)) continue;
+            var target = parseFloat(alarm.target);
+            if (!isFinite(target) || target <= 0) continue;
+
+            var currency = alarm.currency || cfgCurrency || "USD";
+            if (currency !== "USD" && !PriceProvider.fxReady()) {
+                PriceProvider.ensureFxRates(function() {});
+                continue;
+            }
+            var previous = previousUsd > 0 ? PriceProvider.convertFromUsd(previousUsd, currency) : NaN;
+            var current = PriceProvider.convertFromUsd(currentUsd, currency);
+            if (!isFinite(current)) continue;
+
+            var direction = alarm.direction === "below" ? "below" : "above";
+            var crossed = false;
+
+            if (isFinite(previous) && previous > 0) {
+                crossed = direction === "above"
+                    ? previous < target && current >= target
+                    : previous > target && current <= target;
+            }
+
+            if (crossed) {
+                sendPriceAlarmNotification(alarm, current);
+                var triggered = {};
+                for (var k in alarm) triggered[k] = alarm[k];
+                triggered.enabled = false;
+                triggered.triggeredAt = Date.now();
+                nextAlarms[i] = triggered;
+                changedAlarms = true;
+            }
+        }
+        if (changedAlarms) savePriceAlarmRules(nextAlarms);
+    }
+
+    function shellQuote(value) {
+        return "'" + ("" + value).replace(/'/g, "'\\''") + "'";
+    }
+
+    function formatAlarmValue(value, currency) {
+        var symbol = PriceProvider.currencySymbols[currency] || currency;
+        var decimals = value > 0 && value < 1 ? Math.min(6, Math.max(2, 2 - Math.floor(Math.log10(value)))) : 2;
+        try {
+            return Number(value).toLocaleString(Qt.locale(), 'f', decimals) + " " + symbol;
+        } catch (e) {
+            return value.toFixed(decimals) + " " + symbol;
+        }
+    }
+
+    function sendPriceAlarmNotification(alarm, currentValue) {
+        var info = PriceProvider.getAssetInfo(alarm.coin);
+        var ticker = info ? (info.ticker || alarm.coin) : alarm.coin;
+        var currency = alarm.currency || cfgCurrency || "USD";
+        var directionText = alarm.direction === "below" ? i18n("below") : i18n("above");
+        var summary = i18n("%1 price alarm", ticker);
+        var body = i18n("%1 is now %2 %3 at %4. The alarm has been disabled.",
+                        ticker,
+                        directionText,
+                        formatAlarmValue(parseFloat(alarm.target), currency),
+                        formatAlarmValue(currentValue, currency));
+        var cmd = "notify-send --app-name=" + shellQuote("Crypto Price") +
+                  " --icon=" + shellQuote("office-chart-line") +
+                  " " + shellQuote(summary) +
+                  " " + shellQuote(body);
+        notificationRunner.connectSource(cmd);
+    }
+
+    P5Support.DataSource {
+        id: notificationRunner
+        engine: "executable"
+        onNewData: (sourceName, _data) => disconnectSource(sourceName)
     }
 
     function formatCurrency(value) {
