@@ -55,12 +55,7 @@ KCM.SimpleKCM {
     }
 
     function parsePriceAlarms() {
-        try {
-            var arr = JSON.parse(cfg_priceAlarms || "[]");
-            return arr instanceof Array ? arr : [];
-        } catch (e) {
-            return [];
-        }
+        return PriceProvider.normalizePriceAlarms(cfg_priceAlarms, cfg_currency);
     }
 
     function savePriceAlarms(alarms) {
@@ -70,7 +65,11 @@ KCM.SimpleKCM {
     }
 
     function refreshPriceAlarms() {
-        priceAlarmRules = parsePriceAlarms();
+        var normalized = parsePriceAlarms();
+        priceAlarmRules = normalized;
+        if (JSON.stringify(normalized) !== (cfg_priceAlarms || "[]")) {
+            savePriceAlarms(normalized);
+        }
     }
 
     function alarmAssetLabel(ref) {

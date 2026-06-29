@@ -86,7 +86,7 @@ async function run() {
         { id: "bad" }
     ]);
     assert(coingeckoMarkets.length === 1, "Coingecko parser should keep entries with id and symbol");
-    assert(context.getMarketUrl("Binance").indexOf("exchangeInfo") > 0, "getMarketUrl should expose source market URL");
+    assert(context.getMarketUrl("Binance").indexOf("ticker/24hr") > 0, "getMarketUrl should expose smaller Binance ticker market URL");
     assert(context.parseSourceAssets("Binance", JSON.stringify({
         symbols: [{ symbol: "ZECUSDT", status: "TRADING", quoteAsset: "USDT", baseAsset: "ZEC" }]
     })).length === 1, "parseSourceAssets should parse response text");
@@ -94,14 +94,12 @@ async function run() {
 
     context._marketCache = {};
     responses = {
-        "https://api.binance.com/api/v3/exchangeInfo": {
+        "https://api.binance.com/api/v3/ticker/24hr": {
             status: 200,
-            body: JSON.stringify({
-                symbols: [
-                    { symbol: "ZECUSDT", status: "TRADING", quoteAsset: "USDT", baseAsset: "ZEC" },
-                    { symbol: "BTCUSDT", status: "TRADING", quoteAsset: "USDT", baseAsset: "BTC" }
-                ]
-            })
+            body: JSON.stringify([
+                { symbol: "ZECUSDT", lastPrice: "25" },
+                { symbol: "BTCUSDT", lastPrice: "100000" }
+            ])
         }
     };
     const fresh = await fetchAssets("Binance", { forceRefresh: true });
@@ -123,7 +121,7 @@ async function run() {
     assert(cached.meta.fromCache === true, "cached fetch should identify cache source");
 
     responses = {
-        "https://api.binance.com/api/v3/exchangeInfo": { error: true }
+        "https://api.binance.com/api/v3/ticker/24hr": { error: true }
     };
     const fallback = await fetchAssets("Binance", { forceRefresh: true, allowStale: true });
     assert(fallback.items.length === 2, "failed refresh should fall back to cached markets");
@@ -138,6 +136,31 @@ async function run() {
     assert(context.getCoins().indexOf("ZEC") >= 0, "coin registry should include ZEC");
     assert(context.getSources().length === 5, "source registry should expose all configured sources");
     assert(context.getCurrencies().indexOf("USD") >= 0, "currency registry should include USD");
+
+    const normalizedAlarms = context.normalizePriceAlarms([
+        { id: "a", coin: "ZEC", direction: "above", target: "30", currency: "USD", enabled: true },
+        { id: "b", coin: "ZEC", direction: "below", target: "20", currency: "NOPE", triggeredAt: 123 },
+        { id: "bad-coin", coin: "NOPE", direction: "above", target: "1", currency: "USD" },
+        { id: "bad-dir", coin: "ZEC", direction: "sideways", target: "1", currency: "USD" },
+        { id: "bad-target", coin: "ZEC", direction: "above", target: "-1", currency: "USD" }
+    ], "EUR");
+    assert(normalizedAlarms.length === 2, "normalizePriceAlarms should drop malformed rules");
+    assert(normalizedAlarms[1].currency === "USD", "normalizePriceAlarms should default unsupported currency to USD");
+    assert(normalizedAlarms[1].enabled === false && normalizedAlarms[1].triggeredAt === 123, "triggered alarms should normalize as disabled");
+
+    const binanceSocket = context.createMultiSocket("Binance", ["ZEC", "BTC"]);
+    assert(binanceSocket && binanceSocket.coins.length === 2, "Binance multi-socket should include supported coins");
+    assert(binanceSocket.parseMessage({ data: { s: "ZECUSDT", c: "25.5", P: "1.2" } })[0].coin === "ZEC", "Binance WS parser should route combined stream messages");
+    assert(binanceSocket.parseMessage({ data: { s: "UNKNOWN", c: "1", P: "0" } }).length === 0, "Binance WS parser should ignore unknown symbols");
+    assert(binanceSocket.parseMessage({ data: { s: "ZECUSDT", c: "0", P: "0" } }).length === 0, "Binance WS parser should reject invalid prices");
+
+    const dynBitfinex = context.makeAssetKey("Bitfinex", "tPEPE:USD", "PEPE", "Pepe");
+    const bitfinexSocket = context.createMultiSocket("Bitfinex", ["ZEC", dynBitfinex]);
+    assert(bitfinexSocket && bitfinexSocket.subscribeMessages.length === 2, "Bitfinex multi-socket should include dynamic supported coins");
+    assert(bitfinexSocket.parseMessage({ event: "subscribed", symbol: "tZECUSD", chanId: 10 }).length === 0, "Bitfinex subscription messages should not emit prices");
+    var bitfinexUpdate = bitfinexSocket.parseMessage([10, [0, 0, 0, 0, 0, 0.02, 30.5]]);
+    assert(bitfinexUpdate.length === 1 && bitfinexUpdate[0].coin === "ZEC", "Bitfinex WS parser should map channel to coin");
+    assert(bitfinexSocket.parseMessage([999, [0, 0, 0, 0, 0, 0.02, 30.5]]).length === 0, "Bitfinex WS parser should ignore unknown channels");
 
     console.log("price_provider.test.js: ok");
 }

@@ -29,6 +29,7 @@ KCM.SimpleKCM {
     property bool marketUsingCachedFallback: false
     property real marketUpdatedAt: 0
     property string pendingCurlMarketSource: ""
+    property string pendingCurlMarketCommand: ""
 
     readonly property var allCoins: PriceProvider.getCoins()
     readonly property var coinModel: {
@@ -169,11 +170,21 @@ KCM.SimpleKCM {
             marketRefreshFailed = true;
             return;
         }
+        cancelCurlMarketRefresh();
         pendingCurlMarketSource = source;
         marketRefreshing = true;
         marketRefreshFailed = false;
         var cmd = "curl -L -sS --max-time 25 -H " + shellQuote("Accept: application/json") + " " + shellQuote(url);
+        pendingCurlMarketCommand = cmd;
         marketCurlSource.connectSource(cmd);
+    }
+
+    function cancelCurlMarketRefresh() {
+        if (pendingCurlMarketCommand) {
+            marketCurlSource.disconnectSource(pendingCurlMarketCommand);
+        }
+        pendingCurlMarketCommand = "";
+        pendingCurlMarketSource = "";
     }
 
     P5Support.DataSource {
@@ -181,7 +192,9 @@ KCM.SimpleKCM {
         engine: "executable"
         onNewData: (sourceName, data) => {
             disconnectSource(sourceName);
+            if (sourceName !== pendingCurlMarketCommand) return;
             var source = pendingCurlMarketSource || cfg_source || "Binance";
+            pendingCurlMarketCommand = "";
             pendingCurlMarketSource = "";
             var stdout = data && data.stdout ? data.stdout : "";
             var items = PriceProvider.parseSourceAssets(source, stdout);
@@ -223,7 +236,10 @@ KCM.SimpleKCM {
         loadSourceMarkets();
     }
 
-    onCfg_sourceChanged: loadSourceMarkets()
+    onCfg_sourceChanged: {
+        cancelCurlMarketRefresh();
+        loadSourceMarkets();
+    }
 
     Kirigami.FormLayout {
         id: form

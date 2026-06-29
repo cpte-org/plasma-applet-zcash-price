@@ -15,6 +15,10 @@
 - Added a manual **Refresh markets** action in settings with lightweight refresh status.
 - Added a `curl` fallback for settings market search when Plasma/QML `XMLHttpRequest` cannot load a source market list.
 - Added `make test` with static applet contract checks, provider/parser/cache coverage, and live `curl` smoke tests for market discovery behavior.
+- Repeated price fetch failures now keep the last good price visible and mark it stale instead of clearing known-good data.
+- Alarm rules are normalized before use, dropping malformed entries and forcing triggered alarms into a disabled one-shot state.
+- Added deterministic WebSocket parser tests for Binance and Bitfinex, including malformed messages and dynamic assets.
+- Binance market discovery now uses the smaller ticker endpoint instead of the full exchange-info payload.
 
 ## 3.5.0
 

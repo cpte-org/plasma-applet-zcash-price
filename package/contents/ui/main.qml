@@ -454,7 +454,9 @@ PlasmoidItem {
                         Layout.fillWidth: true
                         spacing: 0
                         PlasmaComponents.Label {
-                            text: model.coinName + (model.isWsConnected ? "  •  " + i18n("Live") : "")
+                            text: model.coinName
+                                + (model.isWsConnected ? "  •  " + i18n("Live") : "")
+                                + (model.stale ? "  •  " + i18n("Stale") : "")
                             font.bold: true
                         }
                         PlasmaComponents.Label {
@@ -667,6 +669,8 @@ PlasmoidItem {
                 isWsConnected: false,
                 failedFetches: 0,
                 unavailable: false,
+                stale: false,
+                lastUpdatedAt: 0,
                 priceUsd: 0,
                 change24h: 0,
                 isUp: false,
@@ -728,11 +732,14 @@ PlasmoidItem {
         coinModel.setProperty(idx, "failedFetches", failures);
         if (failures < 3) return;
         coinModel.setProperty(idx, "unavailable", true);
+        coinModel.setProperty(idx, "stale", row.priceUsd > 0);
         coinModel.setProperty(idx, "isWsConnected", false);
-        coinModel.setProperty(idx, "priceUsd", 0);
         coinModel.setProperty(idx, "change24h", 0);
         coinModel.setProperty(idx, "isUp", false);
-        coinModel.setProperty(idx, "displayPrice", "...");
+        if (!(row.priceUsd > 0)) {
+            coinModel.setProperty(idx, "priceUsd", 0);
+            coinModel.setProperty(idx, "displayPrice", "...");
+        }
         coinModel.setProperty(idx, "displayChange", "");
     }
 
@@ -747,7 +754,9 @@ PlasmoidItem {
         var isUp = hasChange ? c >= 0 : false;
         coinModel.setProperty(idx, "failedFetches", 0);
         coinModel.setProperty(idx, "unavailable", false);
+        coinModel.setProperty(idx, "stale", false);
         coinModel.setProperty(idx, "priceUsd", n);
+        coinModel.setProperty(idx, "lastUpdatedAt", Date.now());
         var converted = PriceProvider.convertFromUsd(n, cfgCurrency);
         coinModel.setProperty(idx, "displayPrice", formatCurrency(cfgShowDecimals ? converted : Math.floor(converted)));
         if (hasChange) {
@@ -807,16 +816,15 @@ PlasmoidItem {
     }
 
     function parsePriceAlarms() {
-        try {
-            var arr = JSON.parse(cfgPriceAlarms || "[]");
-            return arr instanceof Array ? arr : [];
-        } catch (e) {
-            return [];
-        }
+        return PriceProvider.normalizePriceAlarms(cfgPriceAlarms, cfgCurrency);
     }
 
     function refreshPriceAlarmRules() {
-        priceAlarmRules = parsePriceAlarms();
+        var normalized = parsePriceAlarms();
+        priceAlarmRules = normalized;
+        if (JSON.stringify(normalized) !== (cfgPriceAlarms || "[]")) {
+            savePriceAlarmRules(normalized);
+        }
     }
 
     function savePriceAlarmRules(alarms) {

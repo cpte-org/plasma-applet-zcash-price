@@ -6,7 +6,7 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 SOURCES=(
-  "Binance|https://api.binance.com/api/v3/exchangeInfo|10"
+  "Binance|https://api.binance.com/api/v3/ticker/24hr|10"
   "Coingecko|https://api.coingecko.com/api/v3/coins/list|1000"
   "Bitfinex|https://api-pub.bitfinex.com/v2/conf/pub:list:pair:exchange|10"
   "Kraken|https://api.kraken.com/0/public/AssetPairs|10"

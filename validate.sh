@@ -29,6 +29,14 @@ else
     check_fail "kpackagetool6 not found (install plasma-sdk)"
 fi
 
+for cmd in curl notify-send dbus-monitor; do
+    if command -v "$cmd" &> /dev/null; then
+        check_pass "$cmd found"
+    else
+        check_fail "$cmd not found"
+    fi
+done
+
 # Check 2: Metadata
 echo ""
 echo "2. Checking metadata.json..."
@@ -37,10 +45,19 @@ if [ -f "package/metadata.json" ]; then
         check_pass "metadata.json is valid JSON"
         
         # Check for required fields
-        if grep -q '"X-Plasma-API-Minimum-Version": "6.0"' package/metadata.json; then
-            check_pass "Plasma 6 API version specified"
+    if grep -q '"X-Plasma-API-Minimum-Version": "6.0"' package/metadata.json; then
+        check_pass "Plasma 6 API version specified"
+    else
+        check_fail "Missing Plasma 6 API version"
+    fi
+
+        VERSION="$(node -e "console.log(require('./package/metadata.json').KPlugin.Version)")"
+        if grep -q "version-${VERSION}-blue" README.md &&
+           grep -q "crypto-price-${VERSION}.plasmoid" Makefile &&
+           grep -q "## ${VERSION}" CHANGES.md; then
+            check_pass "Version references match metadata"
         else
-            check_fail "Missing Plasma 6 API version"
+            check_fail "Version references do not match metadata"
         fi
     else
         check_fail "metadata.json is invalid JSON"

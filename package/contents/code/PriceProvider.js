@@ -72,6 +72,48 @@ function getCoinInfo(t) { return COINS[t] || null; }
 function getSources() { return SOURCES.slice(); }
 function getCurrencies() { return Object.keys(currencySymbols); }
 
+function normalizePriceAlarms(value, defaultCurrency) {
+    var arr = value;
+    if (typeof value === "string") {
+        try { arr = JSON.parse(value || "[]"); } catch (e) { arr = []; }
+    }
+    if (!Array.isArray(arr)) return [];
+
+    var out = [];
+    var currencies = getCurrencies();
+    for (var i = 0; i < arr.length; i++) {
+        var alarm = arr[i] || {};
+        var coin = _safeText(alarm.coin);
+        if (!coin || !getAssetInfo(coin)) continue;
+
+        var direction = alarm.direction === "below" ? "below"
+                      : alarm.direction === "above" ? "above"
+                      : "";
+        if (!direction) continue;
+
+        var target = parseFloat(alarm.target);
+        if (!isFinite(target) || target <= 0) continue;
+
+        var currency = _safeText(alarm.currency || defaultCurrency || "USD").toUpperCase();
+        if (currencies.indexOf(currency) < 0) currency = "USD";
+
+        var normalized = {
+            id: alarm.id ? _safeText(alarm.id) : ("alarm-" + i + "-" + coin + "-" + direction + "-" + target),
+            coin: coin,
+            direction: direction,
+            target: target,
+            currency: currency,
+            enabled: alarm.enabled === false ? false : true
+        };
+        if (isFinite(alarm.triggeredAt) && alarm.triggeredAt > 0) {
+            normalized.triggeredAt = parseInt(alarm.triggeredAt);
+            normalized.enabled = false;
+        }
+        out.push(normalized);
+    }
+    return out;
+}
+
 function _safeText(v) {
     return (v === undefined || v === null) ? "" : ("" + v);
 }
@@ -241,7 +283,7 @@ var MARKET_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function _marketUrl(source) {
     switch (_sourceName(source)) {
-        case 'Binance': return "https://api.binance.com/api/v3/exchangeInfo";
+        case 'Binance': return "https://api.binance.com/api/v3/ticker/24hr";
         case 'Coingecko': return "https://api.coingecko.com/api/v3/coins/list";
         case 'Bitfinex': return "https://api-pub.bitfinex.com/v2/conf/pub:list:pair:exchange";
         case 'Kraken': return "https://api.kraken.com/0/public/AssetPairs";
@@ -269,12 +311,18 @@ function _makeDiscoveredAsset(source, sourceId, ticker, name) {
 
 function _parseBinanceMarkets(d) {
     var out = [];
-    var symbols = d && d.symbols;
+    var symbols = Array.isArray(d) ? d : (d && d.symbols);
     if (!Array.isArray(symbols)) return out;
     for (var i = 0; i < symbols.length; i++) {
         var s = symbols[i];
-        if (!s || s.status !== "TRADING" || s.quoteAsset !== "USDT") continue;
-        out.push(_makeDiscoveredAsset("Binance", s.symbol, s.baseAsset, s.baseAsset));
+        if (!s || !s.symbol) continue;
+        var symbol = _safeText(s.symbol).toUpperCase();
+        if (s.status && s.status !== "TRADING") continue;
+        if (s.quoteAsset && s.quoteAsset !== "USDT") continue;
+        if (!s.quoteAsset && symbol.slice(-4) !== "USDT") continue;
+        var base = s.baseAsset || symbol.slice(0, symbol.length - 4);
+        if (!base) continue;
+        out.push(_makeDiscoveredAsset("Binance", symbol, base, base));
     }
     return out;
 }
