@@ -1,8 +1,8 @@
 # Crypto Price Tracker — Plasma 6 Applet
 
-A lightweight, silent KDE Plasma 6 widget that tracks the live price of any of 50 supported cryptocurrencies.
+A lightweight, silent KDE Plasma 6 widget that tracks live cryptocurrency prices from supported market sources.
 
-![Version](https://img.shields.io/badge/version-3.4.0-blue)
+![Version](https://img.shields.io/badge/version-3.5.0-blue)
 ![Plasma](https://img.shields.io/badge/Plasma-6.0+-1d99f3)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
@@ -14,8 +14,8 @@ A lightweight, silent KDE Plasma 6 widget that tracks the live price of any of 5
   - **Stacked** — all watched coins side-by-side; auto-scrolls (marquee) when content exceeds available width. Hover to pause. Click any coin to open its market site.
 - **Multi-symbol WebSockets**: one socket per source streams updates for many coins (Binance combined-stream, Bitfinex multi-channel). Watching 10 coins on Binance = 1 socket, not 10.
 - **Dynamic width**: stacked mode yields panel space to other widgets; the marquee handles overflow when crowded.
-- **50 coins**: ZEC, BTC, ETH, SOL, XRP, ADA, AVAX, DOT, LINK, ATOM, NEAR, APT, SUI, TON, HBAR, ICP, XLM, ALGO, XTZ, EGLD, ARB, OP, POL, MNT, TIA, STX, UNI, AAVE, MKR, LDO, CRV, RUNE, GMX, DYDX, COMP, FIL, GRT, RNDR, API3, VET, INJ, MINA, KAVA, ROSE, SEI, FLOW, THETA, ZIL, IOTA, NEO.
-- **5 sources**: Binance, Coingecko, Bitfinex, Kraken, Coinbase. Source list auto-filters to the ones that actually list the picked coin.
+- **Curated defaults plus source search**: pick from the built-in common coins or search the selected source for any listed USD/USDT market.
+- **5 sources**: Binance, Coingecko, Bitfinex, Kraken, Coinbase.
 - **Live updates** via WebSocket (Binance, Bitfinex). REST polling fallback for the others or when WS is unavailable.
 - **Themed coin badge** (no bundled logo). Ticker text on a coin-colored circle, scales cleanly at any panel size.
 - **Event-driven recovery** from sleep/suspend and network state changes via DBus (login1 + NetworkManager).
@@ -51,9 +51,9 @@ After install, right-click the panel → "Add Widgets…" → search "Crypto Pri
 Right-click the widget → "Configure Crypto Price…":
 
 - **Display mode**: single / rotation / stacked.
-- **Coin** (single mode): ticker symbol (defaults to ZEC).
-- **Watchlist** (rotation/stacked): pick any number of coins.
-- **Source**: filtered to sources that list the chosen coin (defaults to Binance). In multi-coin modes, the preferred source is applied per coin with auto-fallback if a coin isn't listed there.
+- **Coin** (single mode): pick a built-in coin or search the selected source for a listed market.
+- **Watchlist** (rotation/stacked): pick built-in coins or add markets from the selected source.
+- **Source**: provider used for source-backed search and preferred for built-in coins when available.
 - **WebSocket**: live updates when supported.
 - **Currency**: USD/EUR/GBP/JPY/BTC/ETH (display formatting only).
 - **Decimal places**, **24h change**, **coin badge**, **price text**, **background**.
@@ -62,13 +62,13 @@ Right-click the widget → "Configure Crypto Price…":
 
 ## Source coverage
 
-| Source    | REST | WebSocket | Coins                     |
+| Source    | REST | WebSocket | Search scope              |
 |-----------|------|-----------|---------------------------|
-| Binance   | ✅   | ✅         | All 50                    |
-| Coingecko | ✅   | ❌         | All 50                    |
-| Bitfinex  | ✅   | ✅         | Most majors and L2s       |
-| Kraken    | ✅   | ❌         | Most majors and L2s       |
-| Coinbase  | ✅   | ❌         | Majors plus broad altcoin |
+| Binance   | ✅   | ✅         | Active USDT spot markets  |
+| Coingecko | ✅   | ❌         | CoinGecko coin catalog    |
+| Bitfinex  | ✅   | ✅         | Exchange USD markets      |
+| Kraken    | ✅   | ❌         | Online USD markets        |
+| Coinbase  | ✅   | ❌         | Online USD products       |
 
 ## Reliability
 
@@ -86,7 +86,7 @@ package/
 ├── metadata.json
 └── contents/
     ├── code/
-    │   └── PriceProvider.js          # Coin registry + REST providers
+    │   └── PriceProvider.js          # Asset discovery + REST providers
     ├── config/
     │   ├── config.qml
     │   └── main.xml

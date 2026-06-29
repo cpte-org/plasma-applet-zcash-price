@@ -53,7 +53,7 @@ reload: install-user restart-plasma
 
 # Create distributable package
 zip:
-	zip -r crypto-price-3.4.0.plasmoid ./package/
+	zip -r crypto-price-3.5.0.plasmoid ./package/
 
 # Clean build artifacts
 clean:

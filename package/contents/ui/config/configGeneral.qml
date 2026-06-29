@@ -27,6 +27,9 @@ KCM.SimpleKCM {
     property bool cfg_showBackground
     property string cfg_onClickAction
     property bool cfg_showPriceChange
+    property string marketSearch: ""
+    property var sourceMarkets: []
+    property var filteredSourceMarkets: []
 
     readonly property var allCoins: PriceProvider.getCoins()
     readonly property var coinModel: {
@@ -40,7 +43,20 @@ KCM.SimpleKCM {
     }
 
     readonly property var sourcesForCoin: PriceProvider.getSourcesForCoin(cfg_coin)
-    readonly property bool currentProviderSupportsWs: cfg_source === 'Binance' || cfg_source === 'Bitfinex'
+    readonly property bool currentProviderSupportsWs: sourcesForCoin.indexOf(cfg_source) >= 0 &&
+        (cfg_source === 'Binance' || cfg_source === 'Bitfinex')
+    readonly property var selectedDynamicCoins: {
+        var out = [];
+        var arr = cfg_coins || [];
+        for (var i = 0; i < arr.length; i++) {
+            var ref = "" + arr[i];
+            if (ref.indexOf("dyn:") !== 0) continue;
+            var info = PriceProvider.getAssetInfo(ref);
+            if (!info) continue;
+            out.push({ key: ref, ticker: info.ticker || ref, name: info.name || ref });
+        }
+        return out;
+    }
 
     function setConfig(key, value) {
         if (Plasmoid.configuration[key] === value) return;
@@ -53,11 +69,11 @@ KCM.SimpleKCM {
     function setCoin(picked) {
         if (!picked || picked === cfg_coin) return;
 
-        cfg_coin = picked;
-        setConfig("coin", picked);
+        cfg_coin = normalizeAssetRef(picked);
+        setConfig("coin", cfg_coin);
 
         // If current source no longer supports this coin, switch to the first available.
-        var sources = PriceProvider.getSourcesForCoin(picked);
+        var sources = PriceProvider.getSourcesForCoin(cfg_coin);
         if (sources.indexOf(cfg_source) === -1 && sources.length > 0) {
             cfg_source = sources[0];
             setConfig("source", cfg_source);
@@ -80,28 +96,62 @@ KCM.SimpleKCM {
         setConfig("showPriceChange", cfg_showPriceChange);
     }
 
+    function normalizeAssetRef(ref) {
+        var s = ("" + ref).trim();
+        return s.indexOf("dyn:") === 0 ? s : s.toUpperCase();
+    }
+
     function isCoinChecked(ticker) {
+        var wanted = normalizeAssetRef(ticker);
         if (!cfg_coins) return false;
         for (var i = 0; i < cfg_coins.length; i++) {
-            if (("" + cfg_coins[i]).toUpperCase() === ticker) return true;
+            if (normalizeAssetRef(cfg_coins[i]) === wanted) return true;
         }
         return false;
     }
 
     function toggleCoin(ticker, checked) {
+        var wanted = normalizeAssetRef(ticker);
         var arr = [];
         if (cfg_coins) {
             for (var i = 0; i < cfg_coins.length; i++) {
-                var t = ("" + cfg_coins[i]).toUpperCase();
-                if (t !== ticker) arr.push(t);
+                var t = normalizeAssetRef(cfg_coins[i]);
+                if (t !== wanted) arr.push(t);
             }
         }
-        if (checked) arr.push(ticker);
+        if (checked) arr.push(wanted);
         cfg_coins = arr;
         setConfig("coins", arr);
     }
 
-    Component.onCompleted: syncSavedConfig()
+    function refreshMarketFilter() {
+        var q = marketSearch.trim().toLowerCase();
+        var out = [];
+        for (var i = 0; i < sourceMarkets.length && out.length < 120; i++) {
+            var a = sourceMarkets[i];
+            var hay = (a.ticker + " " + a.name + " " + a.sourceId).toLowerCase();
+            if (!q || hay.indexOf(q) >= 0) out.push(a);
+        }
+        filteredSourceMarkets = out;
+    }
+
+    function loadSourceMarkets() {
+        var source = cfg_source || "Binance";
+        sourceMarkets = [];
+        filteredSourceMarkets = [];
+        PriceProvider.fetchSourceAssets(source, function(items) {
+            if (source !== cfg_source) return;
+            sourceMarkets = items || [];
+            refreshMarketFilter();
+        });
+    }
+
+    Component.onCompleted: {
+        syncSavedConfig();
+        loadSourceMarkets();
+    }
+
+    onCfg_sourceChanged: loadSourceMarkets()
 
     Kirigami.FormLayout {
         id: form
@@ -162,6 +212,38 @@ KCM.SimpleKCM {
             }
         }
 
+        TextField {
+            visible: cfg_displayMode === "single"
+            Kirigami.FormData.label: i18n("Source search:")
+            text: marketSearch
+            placeholderText: i18n("Search markets from selected source")
+            onTextChanged: {
+                marketSearch = text;
+                refreshMarketFilter();
+            }
+        }
+
+        RowLayout {
+            visible: cfg_displayMode === "single"
+            Layout.fillWidth: true
+            ComboBox {
+                id: singleMarketCombo
+                Layout.fillWidth: true
+                model: filteredSourceMarkets
+                textRole: "label"
+                valueRole: "key"
+                enabled: filteredSourceMarkets.length > 0
+            }
+            Button {
+                text: i18n("Track")
+                enabled: filteredSourceMarkets.length > 0
+                onClicked: {
+                    var a = filteredSourceMarkets[singleMarketCombo.currentIndex];
+                    if (a) setCoin(a.key);
+                }
+            }
+        }
+
         // ====== Coins (multi-coin modes) ======
         Kirigami.Heading {
             Kirigami.FormData.label: i18n("Watchlist")
@@ -197,6 +279,56 @@ KCM.SimpleKCM {
             }
         }
 
+        Flow {
+            visible: cfg_displayMode !== "single" && selectedDynamicCoins.length > 0
+            Layout.preferredWidth: 480
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.smallSpacing
+
+            Repeater {
+                model: selectedDynamicCoins
+                delegate: CheckBox {
+                    text: modelData.ticker
+                    checked: true
+                    onToggled: if (!checked) toggleCoin(modelData.key, false)
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.name
+                }
+            }
+        }
+
+        TextField {
+            visible: cfg_displayMode !== "single"
+            Kirigami.FormData.label: i18n("Source search:")
+            text: marketSearch
+            placeholderText: i18n("Search markets from selected source")
+            onTextChanged: {
+                marketSearch = text;
+                refreshMarketFilter();
+            }
+        }
+
+        RowLayout {
+            visible: cfg_displayMode !== "single"
+            Layout.fillWidth: true
+            ComboBox {
+                id: multiMarketCombo
+                Layout.fillWidth: true
+                model: filteredSourceMarkets
+                textRole: "label"
+                valueRole: "key"
+                enabled: filteredSourceMarkets.length > 0
+            }
+            Button {
+                text: i18n("Add")
+                enabled: filteredSourceMarkets.length > 0
+                onClicked: {
+                    var a = filteredSourceMarkets[multiMarketCombo.currentIndex];
+                    if (a) toggleCoin(a.key, true);
+                }
+            }
+        }
+
         // ====== Source ======
         Kirigami.Heading {
             Kirigami.FormData.label: i18n("Data Source")
@@ -207,11 +339,12 @@ KCM.SimpleKCM {
         ComboBox {
             id: sourceCombo
             Kirigami.FormData.label: i18n("Source:")
-            model: sourcesForCoin
+            model: PriceProvider.getSources()
             currentIndex: Math.max(0, model.indexOf(cfg_source))
             onActivated: {
                 cfg_source = currentText;
                 setConfig("source", cfg_source);
+                loadSourceMarkets();
             }
         }
 

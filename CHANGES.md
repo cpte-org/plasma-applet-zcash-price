@@ -1,11 +1,21 @@
 # Changelog
 
+## 3.5.0
+
+### Added
+- **Source-backed market search**: users can now track built-in coins or search the selected source for any listed USD/USDT market.
+- Dynamic asset keys preserve provider-specific market IDs, so custom Binance, Coingecko, Bitfinex, Kraken, and Coinbase selections keep working after restart.
+- Multi-coin watchlists can include both curated built-in coins and source-discovered markets.
+
+### Reliability
+- Repeated REST failures for a tracked market now clear stale prices back to `...`, so delisted or API-changed markets do not leave old values displayed indefinitely.
+
 ## 3.4.0
 
 ### Fixed
 - **Currency conversion**: picking EUR/GBP/JPY/BTC/ETH now actually converts the price instead of just changing the symbol on a USD value. All upstream sources return USD; conversion happens client-side.
 
-### Added
+### Currency
 - USD→{EUR,GBP,JPY,BTC,ETH} rate fetcher in `PriceProvider.js` (`ensureFxRates`, `convertFromUsd`, `invalidateFxRates`). Rates pulled from Coingecko using USDT as the USD proxy, cached in-memory for 1 hour, with concurrent-call coalescing.
 - Rates auto-refresh on wake/network-change events (cache invalidated in `handleWakeup`).
 

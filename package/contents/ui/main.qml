@@ -50,8 +50,9 @@ PlasmoidItem {
         var seen = {}, out = [];
         for (var i = 0; i < arr.length; i++) {
             var c = ("" + arr[i]).trim().toUpperCase();
+            if (("" + arr[i]).indexOf("dyn:") === 0) c = "" + arr[i];
             if (!c || seen[c]) continue;
-            if (!PriceProvider.getCoinInfo(c)) continue;
+            if (!PriceProvider.getAssetInfo(c)) continue;
             seen[c] = true; out.push(c);
         }
         return out.length ? out : [cfgCoin];
@@ -201,7 +202,7 @@ PlasmoidItem {
             onLoaded: bindRow()
             function bindRow() {
                 if (!item || !rowModel) return;
-                item.ticker      = Qt.binding(function() { return rowModel.coin; });
+                item.ticker      = Qt.binding(function() { return rowModel.ticker; });
                 item.priceText   = Qt.binding(function() { return rowModel.displayPrice; });
                 item.changeText  = Qt.binding(function() { return rowModel.displayChange; });
                 item.priceUp     = Qt.binding(function() { return rowModel.isUp; });
@@ -442,7 +443,7 @@ PlasmoidItem {
                         onLoaded: {
                             if (!item) return;
                             item.diameter = Kirigami.Units.iconSizes.medium;
-                            item.ticker = model.coin;
+                            item.ticker = model.ticker;
                             item.badgeColor = model.coinColor;
                         }
                     }
@@ -642,7 +643,7 @@ PlasmoidItem {
 
         for (var i = 0; i < nextCoins.length; i++) {
             var c = nextCoins[i];
-            var info = PriceProvider.getCoinInfo(c);
+            var info = PriceProvider.getAssetInfo(c);
             if (!info) continue;
             var sources = PriceProvider.getSourcesForCoin(c);
             var src = (sources.indexOf(cfgSource) >= 0) ? cfgSource : (sources[0] || cfgSource);
@@ -651,12 +652,15 @@ PlasmoidItem {
             providersByCoin[c] = p;
             coinModel.append({
                 coin: c,
+                ticker: info.ticker || c,
                 coinName: info.name,
                 coinColor: info.color,
                 source: src,
                 homepage: p.homepage || "",
                 supportsWs: !!p.supportsWebSocket,
                 isWsConnected: false,
+                failedFetches: 0,
+                unavailable: false,
                 priceUsd: 0,
                 change24h: 0,
                 isUp: false,
@@ -694,7 +698,10 @@ PlasmoidItem {
                 var p = providersByCoin[c]; if (!p) return;
                 p.fetchPrice(function(price, change24h) {
                     if (generation !== providerGeneration) return;
-                    if (price === null) return;
+                    if (price === null) {
+                        markFetchFailure(c);
+                        return;
+                    }
                     applyUpdate(c, price, change24h);
                 });
             })(coin, i);
@@ -708,6 +715,21 @@ PlasmoidItem {
         return -1;
     }
 
+    function markFetchFailure(coin) {
+        var idx = findRowIndex(coin); if (idx < 0) return;
+        var row = coinModel.get(idx);
+        var failures = (row.failedFetches || 0) + 1;
+        coinModel.setProperty(idx, "failedFetches", failures);
+        if (failures < 3) return;
+        coinModel.setProperty(idx, "unavailable", true);
+        coinModel.setProperty(idx, "isWsConnected", false);
+        coinModel.setProperty(idx, "priceUsd", 0);
+        coinModel.setProperty(idx, "change24h", 0);
+        coinModel.setProperty(idx, "isUp", false);
+        coinModel.setProperty(idx, "displayPrice", "...");
+        coinModel.setProperty(idx, "displayChange", "");
+    }
+
     function applyUpdate(coin, price, change24h) {
         var idx = findRowIndex(coin); if (idx < 0) return;
         var n = parseFloat(price);
@@ -715,6 +737,8 @@ PlasmoidItem {
         var c = parseFloat(change24h);
         var hasChange = isFinite(c);
         var isUp = hasChange ? c >= 0 : false;
+        coinModel.setProperty(idx, "failedFetches", 0);
+        coinModel.setProperty(idx, "unavailable", false);
         coinModel.setProperty(idx, "priceUsd", n);
         var converted = PriceProvider.convertFromUsd(n, cfgCurrency);
         coinModel.setProperty(idx, "displayPrice", formatCurrency(cfgShowDecimals ? converted : Math.floor(converted)));

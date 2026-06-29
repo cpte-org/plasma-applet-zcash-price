@@ -72,6 +72,95 @@ function getCoinInfo(t) { return COINS[t] || null; }
 function getSources() { return SOURCES.slice(); }
 function getCurrencies() { return Object.keys(currencySymbols); }
 
+function _safeText(v) {
+    return (v === undefined || v === null) ? "" : ("" + v);
+}
+
+function _sourceKey(source) {
+    var s = _safeText(source).toLowerCase();
+    if (s === "coingecko") return "coingecko";
+    if (s === "bitfinex") return "bitfinex";
+    if (s === "kraken") return "kraken";
+    if (s === "coinbase") return "coinbase";
+    return "binance";
+}
+
+function _sourceName(key) {
+    switch (_sourceKey(key)) {
+        case "coingecko": return "Coingecko";
+        case "bitfinex": return "Bitfinex";
+        case "kraken": return "Kraken";
+        case "coinbase": return "Coinbase";
+        default: return "Binance";
+    }
+}
+
+function makeAssetKey(source, sourceId, ticker, name) {
+    var src = _sourceName(source);
+    var id = encodeURIComponent(_safeText(sourceId).trim());
+    var t = encodeURIComponent(_safeText(ticker).trim().toUpperCase());
+    var n = encodeURIComponent(_safeText(name).trim());
+    if (!id || !t) return "";
+    return "dyn:" + encodeURIComponent(src) + ":" + id + ":" + t + ":" + n;
+}
+
+function parseAssetKey(ref) {
+    var s = _safeText(ref);
+    if (s.indexOf("dyn:") !== 0) return null;
+    var parts = s.split(":");
+    if (parts.length < 4) return null;
+    var source = _sourceName(decodeURIComponent(parts[1]));
+    var sourceId = decodeURIComponent(parts[2]);
+    var ticker = decodeURIComponent(parts[3]).toUpperCase();
+    var name = parts.length >= 5 ? decodeURIComponent(parts.slice(4).join(":")) : ticker;
+    if (!sourceId || !ticker) return null;
+    return { key: s, source: source, sourceId: sourceId, ticker: ticker, name: name || ticker };
+}
+
+function _hashColor(text) {
+    var h = 0;
+    var s = _safeText(text);
+    for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    var hue = Math.abs(h) % 360;
+    return "hsl(" + hue + ", 58%, 45%)";
+}
+
+function _dynamicInfo(asset) {
+    var info = {
+        name: asset.name || asset.ticker,
+        ticker: asset.ticker,
+        assetKey: asset.key,
+        preferredSource: asset.source,
+        binance: null,
+        coingecko: null,
+        bitfinex: null,
+        kraken: null,
+        coinbase: null,
+        color: _hashColor(asset.source + ":" + asset.sourceId)
+    };
+    info[_sourceKey(asset.source)] = asset.sourceId;
+    return info;
+}
+
+function getAssetInfo(ref) {
+    var raw = _safeText(ref).trim();
+    var dyn = parseAssetKey(raw);
+    if (dyn) return _dynamicInfo(dyn);
+    var ticker = raw.toUpperCase();
+    var base = COINS[ticker];
+    if (!base) return null;
+    var out = {};
+    for (var k in base) out[k] = base[k];
+    out.ticker = ticker;
+    out.assetKey = ticker;
+    return out;
+}
+
+function getAssetTicker(ref) {
+    var info = getAssetInfo(ref);
+    return info ? (info.ticker || _safeText(ref).toUpperCase()) : _safeText(ref).toUpperCase();
+}
+
 // ====== FX rates (USD -> target) =======================================
 // All providers return USD prices. We multiply by a cached USD->target
 // rate to display in EUR/GBP/JPY/BTC/ETH. Rates fetched from Coingecko
@@ -145,8 +234,163 @@ function convertFromUsd(usd, currency) {
 function fxReady() { return _fxFetchedAt > 0; }
 function invalidateFxRates() { _fxFetchedAt = 0; }
 
+// ====== Source market discovery =======================================
+var _marketCache = {};
+var _marketWaiters = {};
+
+function _marketUrl(source) {
+    switch (_sourceName(source)) {
+        case 'Binance': return "https://api.binance.com/api/v3/exchangeInfo";
+        case 'Coingecko': return "https://api.coingecko.com/api/v3/coins/list";
+        case 'Bitfinex': return "https://api-pub.bitfinex.com/v2/conf/pub:list:pair:exchange";
+        case 'Kraken': return "https://api.kraken.com/0/public/AssetPairs";
+        case 'Coinbase': return "https://api.exchange.coinbase.com/products";
+        default: return "";
+    }
+}
+
+function _assetLabel(ticker, name, sourceId) {
+    var n = name && name !== ticker ? " — " + name : "";
+    return ticker + n + "  (" + sourceId + ")";
+}
+
+function _makeDiscoveredAsset(source, sourceId, ticker, name) {
+    var key = makeAssetKey(source, sourceId, ticker, name || ticker);
+    return {
+        key: key,
+        source: _sourceName(source),
+        sourceId: sourceId,
+        ticker: _safeText(ticker).toUpperCase(),
+        name: name || _safeText(ticker).toUpperCase(),
+        label: _assetLabel(_safeText(ticker).toUpperCase(), name || _safeText(ticker).toUpperCase(), sourceId)
+    };
+}
+
+function _parseBinanceMarkets(d) {
+    var out = [];
+    var symbols = d && d.symbols;
+    if (!Array.isArray(symbols)) return out;
+    for (var i = 0; i < symbols.length; i++) {
+        var s = symbols[i];
+        if (!s || s.status !== "TRADING" || s.quoteAsset !== "USDT") continue;
+        out.push(_makeDiscoveredAsset("Binance", s.symbol, s.baseAsset, s.baseAsset));
+    }
+    return out;
+}
+
+function _parseCoingeckoMarkets(d) {
+    var out = [];
+    if (!Array.isArray(d)) return out;
+    for (var i = 0; i < d.length; i++) {
+        var c = d[i];
+        if (!c || !c.id || !c.symbol) continue;
+        out.push(_makeDiscoveredAsset("Coingecko", c.id, c.symbol, c.name || c.symbol));
+    }
+    return out;
+}
+
+function _parseCoinbaseMarkets(d) {
+    var out = [];
+    if (!Array.isArray(d)) return out;
+    for (var i = 0; i < d.length; i++) {
+        var p = d[i];
+        if (!p || p.quote_currency !== "USD" || p.status !== "online") continue;
+        out.push(_makeDiscoveredAsset("Coinbase", p.id, p.base_currency, p.display_name || p.base_currency));
+    }
+    return out;
+}
+
+function _parseKrakenMarkets(d) {
+    var out = [];
+    var result = d && d.result;
+    if (!result) return out;
+    for (var key in result) {
+        var p = result[key];
+        if (!p) continue;
+        if (p.status && p.status !== "online") continue;
+        var quote = p.quote || "";
+        var ws = p.wsname || "";
+        if (quote !== "ZUSD" && quote !== "USD" && ws.indexOf("/USD") < 0) continue;
+        var base = p.base || "";
+        var ticker = ws.indexOf("/") > 0 ? ws.split("/")[0] : base.replace(/^X/, "").replace(/^Z/, "");
+        if (!ticker) continue;
+        out.push(_makeDiscoveredAsset("Kraken", key, ticker, ticker));
+    }
+    return out;
+}
+
+function _parseBitfinexMarkets(d) {
+    var out = [];
+    var pairs = Array.isArray(d) && Array.isArray(d[0]) ? d[0] : d;
+    if (!Array.isArray(pairs)) return out;
+    for (var i = 0; i < pairs.length; i++) {
+        var pair = _safeText(pairs[i]).toUpperCase();
+        if (pair.length < 6 || pair.slice(-3) !== "USD") continue;
+        var base = pair.indexOf(":") > 0 ? pair.split(":")[0] : pair.slice(0, pair.length - 3);
+        var symbol = "t" + pair;
+        out.push(_makeDiscoveredAsset("Bitfinex", symbol, base, base));
+    }
+    return out;
+}
+
+function _parseMarkets(source, data) {
+    switch (_sourceName(source)) {
+        case 'Binance': return _parseBinanceMarkets(data);
+        case 'Coingecko': return _parseCoingeckoMarkets(data);
+        case 'Bitfinex': return _parseBitfinexMarkets(data);
+        case 'Kraken': return _parseKrakenMarkets(data);
+        case 'Coinbase': return _parseCoinbaseMarkets(data);
+        default: return [];
+    }
+}
+
+function fetchSourceAssets(source, callback) {
+    if (typeof callback !== 'function') callback = function() {};
+    var src = _sourceName(source);
+    var cached = _marketCache[src];
+    var now = Date.now();
+    if (cached && (now - cached.at) < 6 * 60 * 60 * 1000) {
+        callback(cached.items);
+        return;
+    }
+    if (_marketWaiters[src]) {
+        _marketWaiters[src].push(callback);
+        return;
+    }
+    _marketWaiters[src] = [callback];
+    var xhr = new XMLHttpRequest();
+    xhr.timeout = 20000;
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState !== XMLHttpRequest.DONE) return;
+        var items = [];
+        if (xhr.status === 200 && xhr.responseText && xhr.responseText.charAt(0) !== '<') {
+            try { items = _parseMarkets(src, JSON.parse(xhr.responseText)); } catch (e) { items = []; }
+        }
+        _marketCache[src] = { at: Date.now(), items: items };
+        var waiters = _marketWaiters[src] || [];
+        delete _marketWaiters[src];
+        for (var i = 0; i < waiters.length; i++) {
+            try { waiters[i](items); } catch (e) {}
+        }
+    };
+    xhr.ontimeout = xhr.onerror = function() {
+        var waiters = _marketWaiters[src] || [];
+        delete _marketWaiters[src];
+        for (var i = 0; i < waiters.length; i++) {
+            try { waiters[i]([]); } catch (e) {}
+        }
+    };
+    try {
+        xhr.open("GET", _marketUrl(src), true);
+        xhr.setRequestHeader("Accept", "application/json");
+        xhr.send();
+    } catch (e) {
+        xhr.onerror();
+    }
+}
+
 function getSourcesForCoin(t) {
-    var i = COINS[t]; if (!i) return [];
+    var i = getAssetInfo(t); if (!i) return [];
     var out = [];
     if (i.binance)   out.push('Binance');
     if (i.coingecko) out.push('Coingecko');
@@ -157,7 +401,7 @@ function getSourcesForCoin(t) {
 }
 
 function createProvider(source, coin) {
-    var i = COINS[coin]; if (!i) return null;
+    var i = getAssetInfo(coin); if (!i) return null;
     switch (source) {
         case 'Binance':   return i.binance   ? new BinanceProvider(coin, i)   : null;
         case 'Coingecko': return i.coingecko ? new CoingeckoProvider(coin, i) : null;
@@ -187,7 +431,7 @@ function _binanceMultiSocket(coins) {
     var streams = [];
     var valid = [];
     for (var i = 0; i < coins.length; i++) {
-        var info = COINS[coins[i]];
+        var info = getAssetInfo(coins[i]);
         if (!info || !info.binance) continue;
         valid.push(coins[i]);
         symToCoin[info.binance] = coins[i];
@@ -216,7 +460,7 @@ function _bitfinexMultiSocket(coins) {
     var msgs = [];
     var valid = [];
     for (var i = 0; i < coins.length; i++) {
-        var info = COINS[coins[i]];
+        var info = getAssetInfo(coins[i]);
         if (!info || !info.bitfinex) continue;
         valid.push(coins[i]);
         symToCoin[info.bitfinex] = coins[i];
@@ -302,7 +546,8 @@ BaseProvider.prototype._get = function(callback, parseFn) {
 function BinanceProvider(coin, info) {
     BaseProvider.call(this, coin, info);
     this.name = "Binance";
-    this.homepage = "https://www.binance.com/en/trade/" + coin + "_USDT";
+    var ticker = info.ticker || coin;
+    this.homepage = "https://www.binance.com/en/trade/" + ticker + "_USDT";
     this.supportsWebSocket = true;
     this.restUrl = "https://api.binance.com/api/v3/ticker/24hr?symbol=" + info.binance;
     this.wsUrl = "wss://stream.binance.com:9443/ws/" + info.binance.toLowerCase() + "@ticker";
@@ -341,7 +586,7 @@ CoingeckoProvider.prototype.fetchPrice = function(cb) {
 function BitfinexProvider(coin, info) {
     BaseProvider.call(this, coin, info);
     this.name = "Bitfinex";
-    this.homepage = "https://trading.bitfinex.com/t/" + coin + ":USD";
+    this.homepage = "https://trading.bitfinex.com/t/" + (info.ticker || coin) + ":USD";
     this.supportsWebSocket = true;
     this.restUrl = "https://api-pub.bitfinex.com/v2/ticker/" + info.bitfinex;
     this.wsUrl = "wss://api-pub.bitfinex.com/ws/2";
@@ -368,7 +613,8 @@ BitfinexProvider.prototype.wsParseMessage = function(d) {
 function KrakenProvider(coin, info) {
     BaseProvider.call(this, coin, info);
     this.name = "Kraken";
-    this.homepage = "https://www.kraken.com/prices/" + (coin === 'BTC' ? 'bitcoin' : coin.toLowerCase());
+    var ticker = info.ticker || coin;
+    this.homepage = "https://www.kraken.com/prices/" + (ticker === 'BTC' ? 'bitcoin' : ticker.toLowerCase());
     this.restUrl = "https://api.kraken.com/0/public/Ticker?pair=" + info.kraken;
 }
 KrakenProvider.prototype = Object.create(BaseProvider.prototype);
